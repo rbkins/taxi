@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import DriverDashboard from "@/components/driver/DriverDashboard";
 import {
   Car,
   Home,
@@ -24,6 +25,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import FloatingDriverButton from "@/components/auth/FloatingDriverButton";
+import ConvertToDriverModal from "@/components/auth/ConvertToDriverModal";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -54,6 +57,7 @@ interface Driver {
 interface User {
   name: string;
   email: string;
+  role?: string;
 }
 
 interface Testimonial {
@@ -107,7 +111,9 @@ export default function TaxiSeguroApp() {
   const [user, setUser] = useState<User>({
     name: "Juan Pérez",
     email: "juan@email.com",
+    role: "passenger",
   });
+  const [showConvertModal, setShowConvertModal] = useState(false);
 
   const testimonials: Testimonial[] = [
     {
@@ -272,6 +278,7 @@ export default function TaxiSeguroApp() {
       setUser({
         name: authUser?.name || "Usuario",
         email: authUser?.email || "Email no disponible",
+        role: authUser?.role || "passenger",
       });
       setIsAuthenticated(true);
       if (currentScreen === "auth") {
@@ -939,10 +946,30 @@ export default function TaxiSeguroApp() {
     );
   }
 
-  // Aplicación Principal
+  // Verificar si el usuario es conductor
+  if (isAuthenticated && user?.role === "conductor") {
+    return <DriverDashboard />;
+  }
+
+  // Aplicación Principal (Cliente)
   return (
     <div className="min-h-screen bg-gradient-to-br from-light-gray to-gray-100 relative">
       <Celebration />
+      {/* Botón flotante para convertir a conductor */}
+      {user?.role !== "conductor" && (
+        <>
+          {activeTab === "profile" && (
+            <FloatingDriverButton onClick={() => setShowConvertModal(true)} />
+          )}
+          <ConvertToDriverModal
+            open={showConvertModal}
+            onClose={() => setShowConvertModal(false)}
+            onSuccess={() => {
+              setUser((prev) => ({ ...prev, role: "conductor" }));
+            }}
+          />
+        </>
+      )}
 
       {/* Header */}
       <header className="bg-gradient-to-r from-dark to-gray-800 text-white p-4 shadow-2xl">
