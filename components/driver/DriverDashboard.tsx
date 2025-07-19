@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTrip } from "@/contexts/TripContext";
+import { locationService } from "@/services/LocationService";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   Car,
@@ -48,11 +50,20 @@ interface DriverStats {
 
 export default function DriverDashboard() {
   const { user: authUser, logout } = useAuth();
+  const {
+    connectDriver,
+    disconnectDriver,
+    connectedDrivers,
+    notifications,
+    markNotificationAsRead,
+  } = useTrip();
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [isOnline, setIsOnline] = useState(false);
   const [currentTrip, setCurrentTrip] = useState<Trip | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<any>(null);
 
   // Cerrar menú móvil cuando se cambia a desktop
   useEffect(() => {
@@ -95,8 +106,51 @@ export default function DriverDashboard() {
     logout();
   };
 
+  // Funciones para conectar/desconectar
+  const handleToggleConnection = async () => {
+    if (isOnline) {
+      // Desconectar
+      setIsConnecting(true);
+      try {
+        await disconnectDriver(authUser?.id || "current-driver");
+        setIsOnline(false);
+        setCurrentLocation(null);
+        console.log("Driver disconnected");
+      } catch (error) {
+        console.error("Error disconnecting:", error);
+      } finally {
+        setIsConnecting(false);
+      }
+    } else {
+      // Conectar
+      setIsConnecting(true);
+      try {
+        // Obtener ubicación actual
+        const location = await locationService.getCurrentLocation();
+        setCurrentLocation(location);
+
+        // Conectar conductor
+        await connectDriver(authUser?.id || "current-driver", location);
+        setIsOnline(true);
+        console.log("Driver connected");
+      } catch (error) {
+        console.error("Error connecting:", error);
+      } finally {
+        setIsConnecting(false);
+      }
+    }
+  };
+
+  // Verificar si el conductor está conectado
+  useEffect(() => {
+    const connectedDriver = connectedDrivers.find(
+      (d) => d.id === (authUser?.id || "current-driver")
+    );
+    setIsOnline(connectedDriver?.isOnline || false);
+  }, [connectedDrivers, authUser?.id]);
+
   const toggleOnlineStatus = () => {
-    setIsOnline(!isOnline);
+    handleToggleConnection();
   };
 
   const acceptTrip = (trip: Trip) => {
@@ -298,6 +352,53 @@ export default function DriverDashboard() {
             </div>
 
             <div className="flex items-center space-x-2 lg:space-x-4">
+              {/* Botón de conexión */}
+              <Button
+                onClick={handleToggleConnection}
+                disabled={isConnecting}
+                className={`${
+                  isOnline
+                    ? "bg-red-500 hover:bg-red-600 text-white"
+                    : "bg-green-500 hover:bg-green-600 text-white"
+                }`}
+                size="sm"
+              >
+                {isConnecting ? (
+                  <Activity className="w-4 h-4 mr-2 animate-spin" />
+                ) : isOnline ? (
+                  <>
+                    <Activity className="w-4 h-4 mr-2" />
+                    Desconectar
+                  </>
+                ) : (
+                  <>
+                    <Activity className="w-4 h-4 mr-2" />
+                    Conectar
+                  </>
+                )}
+              </Button>
+
+              {/* Notificaciones */}
+              {isOnline &&
+                notifications.filter(
+                  (n) => n.recipientId === (authUser?.id || "current-driver")
+                ).length > 0 && (
+                  <div className="relative">
+                    <Button variant="outline" size="sm" className="relative">
+                      <AlertCircle className="w-4 h-4" />
+                      <Badge className="absolute -top-2 -right-2 bg-red-500 text-white text-xs">
+                        {
+                          notifications.filter(
+                            (n) =>
+                              n.recipientId ===
+                                (authUser?.id || "current-driver") && !n.read
+                          ).length
+                        }
+                      </Badge>
+                    </Button>
+                  </div>
+                )}
+
               <Badge className="bg-gradient-to-r from-purple-500 to-pink-500 text-white hidden sm:flex text-xs lg:text-sm">
                 <Award className="w-3 h-3 mr-1" />
                 <span className="hidden md:inline">Conductor </span>Premium

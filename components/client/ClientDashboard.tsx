@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useTrip } from "@/contexts/TripContext";
 import FloatingDriverButton from "@/components/auth/FloatingDriverButton";
 import ConvertToDriverModal from "@/components/auth/ConvertToDriverModal";
+import TripRequestForm from "@/components/trip/TripRequestForm";
 import {
   Car,
   Home,
@@ -63,12 +65,7 @@ export default function ClientDashboard() {
     role: authUser?.role || "passenger",
   });
 
-  // Estados para el formulario de viaje
-  const [formData, setFormData] = useState({
-    currentLocation: "Mi ubicación actual",
-    destination: "",
-    tripType: "economico",
-  });
+  // Estados para el formulario de viaje - REMOVIDO (ahora usa TripRequestForm)
 
   const [tripHistory] = useState<Trip[]>([
     {
@@ -124,14 +121,6 @@ export default function ClientDashboard() {
     if (isMobile) {
       setIsMobileMenuOpen(false);
     }
-  };
-
-  const handleInputChange = (name: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleRequestTaxi = () => {
-    console.log("Solicitando taxi...", formData);
   };
 
   const handleLogout = () => {
@@ -307,152 +296,12 @@ export default function ClientDashboard() {
         <div className="p-4 lg:p-6">
           {/* Home Tab - Solicitar Viaje */}
           {activeTab === "home" && (
-            <div className="space-y-4 lg:space-y-6">
-              {/* Quick Actions */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
-                {[
-                  {
-                    icon: MapPin,
-                    label: "Casa",
-                    color: "from-blue-500 to-cyan-500",
-                  },
-                  {
-                    icon: Car,
-                    label: "Trabajo",
-                    color: "from-green-500 to-emerald-500",
-                  },
-                  {
-                    icon: Calendar,
-                    label: "Programar",
-                    color: "from-purple-500 to-pink-500",
-                  },
-                  {
-                    icon: Gift,
-                    label: "Promociones",
-                    color: "from-orange-500 to-red-500",
-                  },
-                ].map((action, index) => (
-                  <Card
-                    key={index}
-                    className="bg-white shadow-lg border-0 hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:scale-105"
-                  >
-                    <CardContent className="p-4 text-center">
-                      <div
-                        className={`w-12 h-12 mx-auto mb-2 bg-gradient-to-r ${action.color} rounded-lg flex items-center justify-center`}
-                      >
-                        <action.icon className="w-6 h-6 text-white" />
-                      </div>
-                      <p className="text-sm font-medium text-dark">
-                        {action.label}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-
-              {/* Main Trip Request Card */}
-              <Card className="bg-gradient-to-r from-white to-gray-50 shadow-2xl border-0 overflow-hidden">
-                <CardHeader>
-                  <CardTitle className="text-dark flex items-center space-x-2">
-                    <Navigation className="w-6 h-6 text-taxi-yellow" />
-                    <span>Planifica tu viaje</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4 lg:space-y-6">
-                  <div className="space-y-4">
-                    {/* Origen */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-dark flex items-center space-x-2">
-                        <div className="w-3 h-3 bg-success rounded-full"></div>
-                        <span>Desde</span>
-                      </label>
-                      <Input
-                        value={formData.currentLocation}
-                        onChange={(e) =>
-                          handleInputChange("currentLocation", e.target.value)
-                        }
-                        className="bg-white border-gray-200 focus:border-taxi-yellow"
-                      />
-                    </div>
-
-                    {/* Destino */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-dark flex items-center space-x-2">
-                        <div className="w-3 h-3 bg-error rounded-full"></div>
-                        <span>Hasta</span>
-                      </label>
-                      <Input
-                        placeholder="¿A dónde quieres ir?"
-                        value={formData.destination}
-                        onChange={(e) =>
-                          handleInputChange("destination", e.target.value)
-                        }
-                        className="bg-white border-gray-200 focus:border-taxi-yellow"
-                      />
-                    </div>
-
-                    {/* Tipo de viaje */}
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-dark">
-                        Tipo de servicio
-                      </label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <Button
-                          variant={
-                            formData.tripType === "economico"
-                              ? "default"
-                              : "outline"
-                          }
-                          onClick={() =>
-                            handleInputChange("tripType", "economico")
-                          }
-                          className={`h-16 flex flex-col space-y-1 ${
-                            formData.tripType === "economico"
-                              ? "bg-gradient-to-r from-taxi-yellow to-yellow-400 text-dark"
-                              : "border-gray-200"
-                          }`}
-                        >
-                          <Car className="w-5 h-5" />
-                          <span className="text-sm font-medium">Económico</span>
-                          <span className="text-xs opacity-70">
-                            Desde $5.00
-                          </span>
-                        </Button>
-                        <Button
-                          variant={
-                            formData.tripType === "ejecutivo"
-                              ? "default"
-                              : "outline"
-                          }
-                          onClick={() =>
-                            handleInputChange("tripType", "ejecutivo")
-                          }
-                          className={`h-16 flex flex-col space-y-1 ${
-                            formData.tripType === "ejecutivo"
-                              ? "bg-gradient-to-r from-taxi-yellow to-yellow-400 text-dark"
-                              : "border-gray-200"
-                          }`}
-                        >
-                          <Award className="w-5 h-5" />
-                          <span className="text-sm font-medium">Ejecutivo</span>
-                          <span className="text-xs opacity-70">
-                            Desde $12.00
-                          </span>
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Button
-                    onClick={handleRequestTaxi}
-                    className="w-full bg-gradient-to-r from-taxi-yellow to-yellow-400 hover:from-yellow-400 hover:to-taxi-yellow text-dark font-bold py-4 text-lg"
-                  >
-                    <Zap className="w-5 h-5 mr-2" />
-                    Solicitar Taxi Ahora
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
+            <TripRequestForm
+              onTripRequested={(tripId) => {
+                console.log("Trip requested:", tripId);
+                // Aquí podrías agregar lógica adicional si necesitas
+              }}
+            />
           )}
 
           {/* History Tab */}
