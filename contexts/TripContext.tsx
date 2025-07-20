@@ -123,6 +123,7 @@ interface TripContextType {
   disconnectDriver: (driverId: string) => Promise<void>;
   updateDriverLocation: (driverId: string, location: Location) => Promise<void>;
   getConnectedDrivers: () => ConnectedDriver[];
+  refreshConnectedDrivers: () => Promise<void>;
 
   // Utilidades
   getTripById: (tripId: string) => Trip | null;
@@ -178,8 +179,8 @@ export function TripProvider({ children }: TripProviderProps) {
         setNotifications(JSON.parse(savedNotifications));
       }
 
-      // TODO: Aquí iría la llamada real a la API
-      // await refreshFromAPI();
+      // Cargar conductores conectados desde la API
+      await refreshConnectedDrivers();
     } catch (error) {
       console.error("Error loading initial trip data:", error);
     } finally {
@@ -190,12 +191,14 @@ export function TripProvider({ children }: TripProviderProps) {
   // Refrescar datos desde la API
   const refreshTripData = async () => {
     try {
-      // TODO: Implementar llamadas reales a la API
+      // Actualizar conductores conectados cada vez que se refresca
+      await refreshConnectedDrivers();
+
+      // TODO: Implementar llamadas reales a la API para otros datos
       // const response = await fetch('/api/trips/current');
       // const data = await response.json();
 
-      // Por ahora, simular actualización
-      console.log("Refreshing trip data...");
+      console.log("Trip data refreshed");
     } catch (error) {
       console.error("Error refreshing trip data:", error);
     }
@@ -213,14 +216,23 @@ export function TripProvider({ children }: TripProviderProps) {
       // Calcular ruta y obtener conductores disponibles
       const route = await locationService.calculateRoute(origin, destination);
 
-      // Usar conductores conectados en lugar de mocks
+      // Refrescar conductores conectados desde la API antes de crear el viaje
+      await refreshConnectedDrivers();
+
+      // SOLO usar conductores conectados reales - NO MOCKS
       const availableDrivers =
         connectedDrivers.length > 0
           ? await locationService.getAvailableDriversNearFromConnected(
               origin,
               connectedDrivers
             )
-          : await locationService.getAvailableDriversNear(origin); // Fallback a mocks
+          : []; // Si no hay conductores conectados, lista vacía
+
+      console.log("Conductores conectados:", connectedDrivers.length);
+      console.log(
+        "Conductores disponibles para el viaje:",
+        availableDrivers.length
+      );
 
       const newTrip: Trip = {
         id: `trip-${Date.now()}`,
@@ -634,36 +646,75 @@ export function TripProvider({ children }: TripProviderProps) {
     return notifications.filter((notif) => !notif.read).length;
   };
 
+  // Refrescar conductores conectados desde la API
+  const refreshConnectedDrivers = async () => {
+    try {
+      console.log("🔄 Refreshing connected drivers from API...");
+
+      const response = await fetch("/api/drivers/status");
+      console.log("📨 GET Response status:", response.status);
+
+      const result = await response.json();
+      console.log("📨 GET Response data:", result);
+
+      if (result.success) {
+        console.log("✅ Setting connected drivers:", result.drivers.length);
+        setConnectedDrivers(result.drivers);
+        console.log("📊 Connected drivers updated:", result.drivers);
+      } else {
+        console.error("❌ Error fetching connected drivers:", result.message);
+      }
+    } catch (error) {
+      console.error("❌ Error refreshing connected drivers:", error);
+    }
+  };
+
   // Conectar conductor
   const connectDriver = async (
     driverId: string,
     location: Location
   ): Promise<void> => {
     try {
-      // Buscar conductor en base de datos (simulado)
-      const mockDriverData = getMockDriverData(driverId);
+      console.log("🚗 Connecting driver with ID:", driverId);
+      console.log("📍 Location:", location);
 
-      if (!mockDriverData) {
-        throw new Error("Driver not found");
+      // Usar API real para conectar conductor
+      const token = localStorage.getItem("token");
+      console.log("🎫 Token exists:", !!token);
+
+      if (!token) {
+        throw new Error("No hay token de autenticación");
       }
 
-      const connectedDriver: ConnectedDriver = {
-        ...mockDriverData,
-        isOnline: true,
-        currentLocation: location,
-        lastUpdate: new Date(),
-      };
+      console.log("📡 Making API call to /api/drivers/status...");
 
-      setConnectedDrivers((prev) => {
-        const filtered = prev.filter((d) => d.id !== driverId);
-        const updated = [...filtered, connectedDriver];
-        localStorage.setItem("connectedDrivers", JSON.stringify(updated));
-        return updated;
+      const response = await fetch("/api/drivers/status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "connect",
+          location: location,
+        }),
       });
 
-      console.log("Driver connected:", driverId);
+      console.log("📨 Response status:", response.status);
+      const result = await response.json();
+      console.log("📨 Response data:", result);
+
+      if (!result.success) {
+        throw new Error(result.message || "Error conectando conductor");
+      }
+
+      // Actualizar estado local
+      console.log("🔄 Refreshing connected drivers...");
+      await refreshConnectedDrivers();
+
+      console.log("✅ Driver connected successfully:", driverId);
     } catch (error) {
-      console.error("Error connecting driver:", error);
+      console.error("❌ Error connecting driver:", error);
       throw error;
     }
   };
@@ -671,13 +722,35 @@ export function TripProvider({ children }: TripProviderProps) {
   // Desconectar conductor
   const disconnectDriver = async (driverId: string): Promise<void> => {
     try {
-      setConnectedDrivers((prev) => {
-        const updated = prev.filter((d) => d.id !== driverId);
-        localStorage.setItem("connectedDrivers", JSON.stringify(updated));
-        return updated;
+      console.log("Disconnecting driver with ID:", driverId);
+
+      // Usar API real para desconectar conductor
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("No hay token de autenticación");
+      }
+
+      const response = await fetch("/api/drivers/status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "disconnect",
+        }),
       });
 
-      console.log("Driver disconnected:", driverId);
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.message || "Error desconectando conductor");
+      }
+
+      // Actualizar estado local
+      await refreshConnectedDrivers();
+
+      console.log("Driver disconnected successfully:", driverId);
     } catch (error) {
       console.error("Error disconnecting driver:", error);
       throw error;
@@ -690,18 +763,33 @@ export function TripProvider({ children }: TripProviderProps) {
     location: Location
   ): Promise<void> => {
     try {
-      setConnectedDrivers((prev) => {
-        const updated = prev.map((driver) =>
-          driver.id === driverId
-            ? { ...driver, currentLocation: location, lastUpdate: new Date() }
-            : driver
-        );
-        localStorage.setItem("connectedDrivers", JSON.stringify(updated));
-        return updated;
+      // Para actualizaciones de ubicación, usar API similar al connect
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.warn("No hay token para actualizar ubicación");
+        return;
+      }
+
+      const response = await fetch("/api/drivers/status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "connect", // Reutilizar connect para actualizar ubicación
+          location: location,
+        }),
       });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Actualizar estado local
+        await refreshConnectedDrivers();
+      }
     } catch (error) {
       console.error("Error updating driver location:", error);
-      throw error;
     }
   };
 
@@ -713,6 +801,18 @@ export function TripProvider({ children }: TripProviderProps) {
   // Función auxiliar para obtener datos mock de conductores
   const getMockDriverData = (driverId: string) => {
     const mockDrivers = [
+      {
+        id: "current-driver",
+        name: "Juan Pérez",
+        email: "juan@taxi.com",
+        rating: 4.9,
+        vehicleInfo: {
+          make: "Toyota",
+          model: "Camry",
+          color: "Azul",
+          plate: "TXI-001",
+        },
+      },
       {
         id: "driver-001",
         name: "Carlos Ruiz",
@@ -782,6 +882,7 @@ export function TripProvider({ children }: TripProviderProps) {
     disconnectDriver,
     updateDriverLocation,
     getConnectedDrivers,
+    refreshConnectedDrivers,
 
     // Utilidades
     getTripById,

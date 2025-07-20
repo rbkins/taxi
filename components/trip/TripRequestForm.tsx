@@ -151,16 +151,28 @@ export default function TripRequestForm({
     }
 
     try {
+      console.log("🚗 Creating trip request...");
+      console.log("📍 Origin:", currentLocation);
+      console.log("🎯 Destination:", destination);
+      console.log("💰 Fare:", proposedFare);
+
       setShowFareModal(false);
       const tripId = await createTripRequest(
         currentLocation,
         destination,
         proposedFare
       );
+
+      console.log("✅ Trip created with ID:", tripId);
+      console.log(
+        "👥 Available drivers:",
+        currentTrip?.availableDrivers?.length || 0
+      );
+
       setShowDriversModal(true);
       onTripRequested?.(tripId);
     } catch (error) {
-      console.error("Error creating trip:", error);
+      console.error("❌ Error creating trip:", error);
       setError("Error al crear la solicitud de viaje");
     }
   };
@@ -182,6 +194,38 @@ export default function TripRequestForm({
 
   return (
     <div className="space-y-4 lg:space-y-6">
+      {/* Debug Panel */}
+      <div className="bg-slate-100 p-4 rounded-lg text-xs space-y-2">
+        <h4 className="font-semibold">DEBUG INFO</h4>
+        <div>Connected Drivers Count: {connectedDrivers.length}</div>
+        <div>
+          Available Drivers Count: {currentTrip?.availableDrivers?.length || 0}
+        </div>
+        <div>
+          Connected Drivers:{" "}
+          {JSON.stringify(
+            connectedDrivers.map((d) => ({
+              id: d.id,
+              name: d.name,
+              isOnline: d.isOnline,
+            })),
+            null,
+            2
+          )}
+        </div>
+        <div>
+          Available Drivers:{" "}
+          {JSON.stringify(
+            currentTrip?.availableDrivers?.map((d: any) => ({
+              id: d.id,
+              name: d.name,
+            })) || [],
+            null,
+            2
+          )}
+        </div>
+      </div>
+
       {error && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -477,8 +521,16 @@ export default function TripRequestForm({
           {currentTrip?.availableDrivers.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               <Car className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>No hay conductores disponibles en este momento</p>
-              <p className="text-sm">Intenta nuevamente en unos minutos</p>
+              <p className="font-medium">
+                No hay conductores disponibles en este momento
+              </p>
+              <p className="text-sm mt-2">
+                Los conductores deben estar conectados y en línea para aparecer
+                aquí
+              </p>
+              <p className="text-sm text-yellow-600 mt-1">
+                No se muestran datos simulados - solo conductores reales
+              </p>
             </div>
           )}
         </DialogContent>

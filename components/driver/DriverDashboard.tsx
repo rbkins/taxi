@@ -56,6 +56,7 @@ export default function DriverDashboard() {
     connectedDrivers,
     notifications,
     markNotificationAsRead,
+    refreshConnectedDrivers,
   } = useTrip();
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -64,6 +65,13 @@ export default function DriverDashboard() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<any>(null);
+  const [justUpdated, setJustUpdated] = useState(false); // Para evitar sobreescribir estado recién actualizado
+
+  // ID consistente del conductor
+  const driverId = authUser?.id;
+
+  console.log("DriverDashboard - AuthUser:", authUser);
+  console.log("DriverDashboard - DriverId:", driverId);
 
   // Cerrar menú móvil cuando se cambia a desktop
   useEffect(() => {
@@ -108,16 +116,44 @@ export default function DriverDashboard() {
 
   // Funciones para conectar/desconectar
   const handleToggleConnection = async () => {
+    if (!driverId) {
+      console.error("No hay usuario autenticado para conectar");
+      alert("Debes estar autenticado como conductor para conectarte");
+      return;
+    }
+
+    console.log("Toggle connection - Driver ID:", driverId);
+    console.log("AuthUser:", authUser);
+    console.log("IsOnline:", isOnline);
+
     if (isOnline) {
       // Desconectar
       setIsConnecting(true);
       try {
-        await disconnectDriver(authUser?.id || "current-driver");
+        console.log("Attempting to disconnect...");
+        await disconnectDriver(driverId);
+
+        // Forzar actualización del estado local inmediatamente
+        console.log("✅ Disconnection successful, updating local state");
         setIsOnline(false);
         setCurrentLocation(null);
-        console.log("Driver disconnected");
+        setJustUpdated(true); // Marcar que acabamos de actualizar
+
+        // Forzar actualización de la lista de conductores conectados (con delay)
+        setTimeout(async () => {
+          await refreshConnectedDrivers();
+        }, 1000);
+
+        // Limpiar la marca después de un tiempo (aumentamos a 5 segundos)
+        setTimeout(() => setJustUpdated(false), 5000);
+
+        console.log("Driver disconnected successfully");
+        console.log(
+          "✅ Estado actualizado: Conductor desconectado exitosamente"
+        );
       } catch (error) {
         console.error("Error disconnecting:", error);
+        alert("Error al desconectar: " + error);
       } finally {
         setIsConnecting(false);
       }
@@ -125,16 +161,34 @@ export default function DriverDashboard() {
       // Conectar
       setIsConnecting(true);
       try {
+        console.log("Attempting to connect...");
         // Obtener ubicación actual
         const location = await locationService.getCurrentLocation();
+        console.log("Location obtained:", location);
         setCurrentLocation(location);
 
         // Conectar conductor
-        await connectDriver(authUser?.id || "current-driver", location);
+        console.log("Calling connectDriver...");
+        const result = await connectDriver(driverId, location);
+
+        // Forzar actualización del estado local inmediatamente
+        console.log("✅ Connection successful, updating local state");
         setIsOnline(true);
-        console.log("Driver connected");
+        setJustUpdated(true); // Marcar que acabamos de actualizar
+
+        // Forzar actualización de la lista de conductores conectados (con delay)
+        setTimeout(async () => {
+          await refreshConnectedDrivers();
+        }, 1000);
+
+        // Limpiar la marca después de un tiempo (aumentamos a 5 segundos)
+        setTimeout(() => setJustUpdated(false), 5000);
+
+        console.log("Driver connected successfully with ID:", driverId);
+        console.log("✅ Estado actualizado: Conductor conectado exitosamente");
       } catch (error) {
         console.error("Error connecting:", error);
+        alert("Error al conectar: " + error);
       } finally {
         setIsConnecting(false);
       }
@@ -143,11 +197,33 @@ export default function DriverDashboard() {
 
   // Verificar si el conductor está conectado
   useEffect(() => {
-    const connectedDriver = connectedDrivers.find(
-      (d) => d.id === (authUser?.id || "current-driver")
-    );
-    setIsOnline(connectedDriver?.isOnline || false);
-  }, [connectedDrivers, authUser?.id]);
+    if (!driverId) return; // No verificar si no hay usuario autenticado
+    if (justUpdated) return; // No sobreescribir si acabamos de actualizar
+
+    console.log("🔍 Checking connection status for driver:", driverId);
+    console.log("📊 Connected drivers:", connectedDrivers);
+
+    // Buscar el conductor en la lista de conectados
+    const connectedDriver = connectedDrivers.find((d) => {
+      console.log("Comparing:", d.id, "with", driverId);
+      return d.id === driverId;
+    });
+
+    const isDriverOnline = connectedDriver?.isOnline || false;
+    console.log("🔌 Driver online status:", isDriverOnline);
+    console.log("🎯 Found connected driver:", connectedDriver);
+
+    // Forzar actualización del estado si hay cambio
+    if (isOnline !== isDriverOnline) {
+      console.log(
+        "🔄 Updating online status from",
+        isOnline,
+        "to",
+        isDriverOnline
+      );
+      setIsOnline(isDriverOnline);
+    }
+  }, [connectedDrivers, driverId, isOnline, justUpdated]);
 
   const toggleOnlineStatus = () => {
     handleToggleConnection();
@@ -204,6 +280,39 @@ export default function DriverDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-light-gray to-gray-100 flex">
+      {/* Driver Status Debug Panel */}
+      <div className="fixed top-0 right-0 z-50 bg-white shadow-lg p-4 text-xs max-w-xs border-l border-gray-300">
+        <h4 className="font-semibold mb-2 text-blue-600">DRIVER DEBUG</h4>
+        <div className="space-y-1">
+          <div>Driver ID: {driverId || "N/A"}</div>
+          <div
+            className={`${
+              isOnline ? "text-green-600 font-bold" : "text-red-600"
+            }`}
+          >
+            IsOnline State: {isOnline ? "✅ CONECTADO" : "❌ DESCONECTADO"}
+          </div>
+          <div
+            className={`${
+              justUpdated ? "text-orange-600 font-bold" : "text-gray-500"
+            }`}
+          >
+            Just Updated: {justUpdated ? "🔒 PROTEGIDO" : "🔓 Normal"}
+          </div>
+          <div>Button Text: {isOnline ? "Desconectar" : "Conectar"}</div>
+          <div>Current Time: {new Date().toLocaleTimeString()}</div>
+          <div>
+            Location:{" "}
+            {currentLocation
+              ? `${currentLocation.lat.toFixed(
+                  4
+                )}, ${currentLocation.lng.toFixed(4)}`
+              : "N/A"}
+          </div>
+          <div>Connected Drivers Count: {connectedDrivers.length}</div>
+        </div>
+      </div>
+
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
         <div
@@ -380,18 +489,16 @@ export default function DriverDashboard() {
 
               {/* Notificaciones */}
               {isOnline &&
-                notifications.filter(
-                  (n) => n.recipientId === (authUser?.id || "current-driver")
-                ).length > 0 && (
+                driverId &&
+                notifications.filter((n) => n.recipientId === driverId).length >
+                  0 && (
                   <div className="relative">
                     <Button variant="outline" size="sm" className="relative">
                       <AlertCircle className="w-4 h-4" />
                       <Badge className="absolute -top-2 -right-2 bg-red-500 text-white text-xs">
                         {
                           notifications.filter(
-                            (n) =>
-                              n.recipientId ===
-                                (authUser?.id || "current-driver") && !n.read
+                            (n) => n.recipientId === driverId && !n.read
                           ).length
                         }
                       </Badge>
