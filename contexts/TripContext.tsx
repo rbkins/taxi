@@ -61,7 +61,6 @@ export interface TripNotification {
     | "trip-request"
     | "trip-accepted"
     | "trip-rejected"
-    | "counter-offer"
     | "trip-cancelled"
     | "trip-completed";
   title: string;
@@ -69,6 +68,16 @@ export interface TripNotification {
   data?: any;
   read: boolean;
   createdAt: Date;
+  // Propiedades adicionales para solicitudes de viaje
+  driverId?: string;
+  passengerId?: string;
+  clientName?: string;
+  origin?: Location;
+  destination?: Location;
+  currentOffer?: number;
+  distance?: number;
+  estimatedTime?: number;
+  status?: string;
 }
 
 export interface ConnectedDriver {
@@ -99,20 +108,30 @@ interface TripContextType {
   createTripRequest: (
     origin: Location,
     destination: Location,
-    proposedFare: number
+    proposedFare: number,
+    driverId: string
   ) => Promise<string>;
   selectDriver: (tripId: string, driverId: string) => Promise<void>;
   acceptTrip: (tripId: string) => Promise<void>;
   rejectTrip: (tripId: string, reason?: string) => Promise<void>;
-  makeCounterOffer: (
-    tripId: string,
-    amount: number,
-    message?: string
-  ) => Promise<void>;
-  acceptCounterOffer: (tripId: string) => Promise<void>;
   startTrip: (tripId: string) => Promise<void>;
   completeTrip: (tripId: string) => Promise<void>;
   cancelTrip: (tripId: string, reason: string) => Promise<void>;
+
+  // Nuevas funciones para ofertas
+  sendTripOffer: (
+    driverId: string,
+    origin: Location,
+    destination: Location,
+    proposedFare: number
+  ) => Promise<string>;
+  respondToOffer: (
+    tripId: string,
+    action: "accept" | "reject"
+  ) => Promise<void>;
+  getTripNotifications: () => Promise<TripNotification[]>;
+  refreshTripNotifications: () => Promise<void>;
+  getTripDetails: (tripId: string) => Promise<any>;
 
   // Acciones de notificaciones
   markNotificationAsRead: (notificationId: string) => void;
@@ -181,6 +200,9 @@ export function TripProvider({ children }: TripProviderProps) {
 
       // Cargar conductores conectados desde la API
       await refreshConnectedDrivers();
+
+      // Cargar notificaciones de trips para conductores
+      await refreshTripNotifications();
     } catch (error) {
       console.error("Error loading initial trip data:", error);
     } finally {
@@ -191,12 +213,16 @@ export function TripProvider({ children }: TripProviderProps) {
   // Refrescar datos desde la API
   const refreshTripData = async () => {
     try {
-      // Actualizar conductores conectados cada vez que se refresca
+      // Check if user is authenticated before making API calls
+      const token = localStorage.getItem("token");
+
+      // Always refresh connected drivers (this endpoint doesn't require auth)
       await refreshConnectedDrivers();
 
-      // TODO: Implementar llamadas reales a la API para otros datos
-      // const response = await fetch('/api/trips/current');
-      // const data = await response.json();
+      // Only refresh notifications if user is authenticated
+      if (token) {
+        await refreshTripNotifications();
+      }
 
       console.log("Trip data refreshed");
     } catch (error) {
@@ -431,98 +457,6 @@ export function TripProvider({ children }: TripProviderProps) {
     }
   };
 
-  // Hacer contraoferta
-  const makeCounterOffer = async (
-    tripId: string,
-    amount: number,
-    message?: string
-  ) => {
-    setIsLoading(true);
-
-    try {
-      if (!currentTrip || currentTrip.id !== tripId) {
-        throw new Error("Trip not found");
-      }
-
-      const negotiation = {
-        from: "driver" as const,
-        amount,
-        timestamp: new Date(),
-        message,
-      };
-
-      const updatedTrip: Trip = {
-        ...currentTrip,
-        negotiations: [...currentTrip.negotiations, negotiation],
-        updatedAt: new Date(),
-      };
-
-      setCurrentTrip(updatedTrip);
-      localStorage.setItem("currentTrip", JSON.stringify(updatedTrip));
-
-      // Crear notificación para el pasajero
-      const notification: TripNotification = {
-        id: `notif-${Date.now()}`,
-        tripId,
-        recipientId: currentTrip.passengerId,
-        type: "counter-offer",
-        title: "Contraoferta recibida",
-        message: `El conductor propone $${amount.toFixed(2)} para tu viaje`,
-        data: { amount, message },
-        read: false,
-        createdAt: new Date(),
-      };
-
-      const updatedNotifications = [...notifications, notification];
-      setNotifications(updatedNotifications);
-      localStorage.setItem(
-        "tripNotifications",
-        JSON.stringify(updatedNotifications)
-      );
-
-      console.log("Counter offer made:", amount);
-    } catch (error) {
-      console.error("Error making counter offer:", error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Aceptar contraoferta
-  const acceptCounterOffer = async (tripId: string) => {
-    setIsLoading(true);
-
-    try {
-      if (!currentTrip || currentTrip.id !== tripId) {
-        throw new Error("Trip not found");
-      }
-
-      const lastNegotiation =
-        currentTrip.negotiations[currentTrip.negotiations.length - 1];
-      if (!lastNegotiation) {
-        throw new Error("No counter offer found");
-      }
-
-      const updatedTrip: Trip = {
-        ...currentTrip,
-        status: "accepted",
-        finalFare: lastNegotiation.amount,
-        updatedAt: new Date(),
-      };
-
-      setCurrentTrip(updatedTrip);
-      localStorage.setItem("currentTrip", JSON.stringify(updatedTrip));
-
-      console.log("Counter offer accepted");
-    } catch (error) {
-      console.error("Error accepting counter offer:", error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   // Iniciar viaje
   const startTrip = async (tripId: string) => {
     setIsLoading(true);
@@ -683,7 +617,9 @@ export function TripProvider({ children }: TripProviderProps) {
       console.log("🎫 Token exists:", !!token);
 
       if (!token) {
-        throw new Error("No hay token de autenticación");
+        throw new Error(
+          "No hay token de autenticación. Por favor, inicia sesión."
+        );
       }
 
       console.log("📡 Making API call to /api/drivers/status...");
@@ -701,6 +637,16 @@ export function TripProvider({ children }: TripProviderProps) {
       });
 
       console.log("📨 Response status:", response.status);
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error(
+            "Sesión expirada. Por favor, inicia sesión nuevamente."
+          );
+        }
+        throw new Error(`Error del servidor: ${response.status}`);
+      }
+
       const result = await response.json();
       console.log("📨 Response data:", result);
 
@@ -727,7 +673,9 @@ export function TripProvider({ children }: TripProviderProps) {
       // Usar API real para desconectar conductor
       const token = localStorage.getItem("token");
       if (!token) {
-        throw new Error("No hay token de autenticación");
+        throw new Error(
+          "No hay token de autenticación. Por favor, inicia sesión."
+        );
       }
 
       const response = await fetch("/api/drivers/status", {
@@ -740,6 +688,15 @@ export function TripProvider({ children }: TripProviderProps) {
           action: "disconnect",
         }),
       });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error(
+            "Sesión expirada. Por favor, inicia sesión nuevamente."
+          );
+        }
+        throw new Error(`Error del servidor: ${response.status}`);
+      }
 
       const result = await response.json();
 
@@ -854,6 +811,231 @@ export function TripProvider({ children }: TripProviderProps) {
     return mockDrivers.find((d) => d.id === driverId);
   };
 
+  // Nueva función: Enviar oferta de viaje
+  const sendTripOffer = async (
+    driverId: string,
+    origin: Location,
+    destination: Location,
+    proposedFare: number
+  ): Promise<string> => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("No hay token de autenticación");
+      }
+
+      console.log("💰 Enviando oferta de viaje:", {
+        driverId,
+        origin,
+        destination,
+        proposedFare,
+      });
+
+      // Calcular distancia y tiempo estimado
+      const route = await locationService.calculateRoute(origin, destination);
+
+      const response = await fetch("/api/trips", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          driverId,
+          origin,
+          destination,
+          proposedFare,
+          distance: route.distance,
+          estimatedTime: route.estimatedTime,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.message || "Error enviando oferta");
+      }
+
+      console.log("✅ Oferta enviada exitosamente:", result.tripId);
+
+      // Refrescar las notificaciones para mantener estado actualizado
+      await refreshTripNotifications();
+
+      return result.tripId;
+    } catch (error) {
+      console.error("❌ Error enviando oferta:", error);
+      throw error;
+    }
+  };
+
+  // Nueva función: Responder a oferta (solo aceptar/rechazar)
+  const respondToOffer = async (
+    tripId: string,
+    action: "accept" | "reject"
+  ): Promise<void> => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("No hay token de autenticación");
+      }
+
+      console.log("🎯 Respondiendo a oferta:", { tripId, action });
+
+      const response = await fetch("/api/trips/respond", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          tripId,
+          action,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.message || "Error respondiendo a oferta");
+      }
+
+      console.log("✅ Respuesta enviada exitosamente");
+
+      // Refrescar las notificaciones
+      await refreshTripNotifications();
+    } catch (error) {
+      console.error("❌ Error respondiendo a oferta:", error);
+      throw error;
+    }
+  };
+
+  // Nueva función: Obtener notificaciones de trips
+  const getTripNotifications = async (): Promise<TripNotification[]> => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.log("⚠️ No token found, skipping trip notifications");
+        return [];
+      }
+
+      // Obtener notificaciones según el rol del usuario
+      const response = await fetch("/api/trips/notifications", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        console.log(
+          `⚠️ Notifications API returned ${response.status}, user may not be authenticated`
+        );
+        return [];
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log(
+          "✅ Trip notifications received:",
+          result.notifications.length
+        );
+        console.log("📋 Raw notifications data:", result.notifications);
+        return result.notifications;
+      }
+
+      return [];
+    } catch (error) {
+      console.error("❌ Error obteniendo notificaciones de trips:", error);
+      return [];
+    }
+  };
+
+  // Nueva función: Refrescar notificaciones de trips
+  const refreshTripNotifications = async (): Promise<void> => {
+    try {
+      const tripNotifications = await getTripNotifications();
+      console.log("🔔 Raw trip notifications received:", tripNotifications);
+
+      // Convertir notificaciones de trips al formato de notificaciones generales
+      const formattedNotifications: TripNotification[] = tripNotifications.map(
+        (tripNotif: any) => {
+          const notification = {
+            id: tripNotif.id,
+            tripId: tripNotif.tripId,
+            recipientId: tripNotif.driverId, // CORREGIDO: El conductor es quien recibe la notificación
+            type: "trip-request" as const,
+            title: "Nueva Solicitud de Viaje",
+            message: `Solicitud desde ${
+              tripNotif.origin?.address || "Origen"
+            } hasta ${tripNotif.destination?.address || "Destino"} por $${
+              tripNotif.currentOffer
+            }`,
+            data: tripNotif,
+            read: false,
+            createdAt: new Date(tripNotif.createdAt),
+          };
+          console.log("🔔 Formatted notification:", notification);
+          console.log("🎯 Notification recipientId:", notification.recipientId);
+          console.log(
+            "🎯 Notification driverId from data:",
+            tripNotif.driverId
+          );
+          return notification;
+        }
+      );
+
+      console.log("🔔 All formatted notifications:", formattedNotifications);
+
+      // Combinar con notificaciones existentes no relacionadas a trips
+      const otherNotifications = notifications.filter(
+        (n) => n.type !== "trip-request"
+      );
+
+      console.log("🔔 Other notifications:", otherNotifications);
+      console.log("🔔 Setting notifications to:", [
+        ...otherNotifications,
+        ...formattedNotifications,
+      ]);
+
+      setNotifications([...otherNotifications, ...formattedNotifications]);
+
+      console.log(
+        "🔔 Notificaciones de trips actualizadas:",
+        formattedNotifications.length
+      );
+    } catch (error) {
+      console.error("❌ Error refrescando notificaciones de trips:", error);
+    }
+  };
+
+  // Nueva función: Obtener detalles de un trip específico
+  const getTripDetails = async (tripId: string): Promise<any> => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("No hay token de autenticación");
+      }
+
+      const response = await fetch(`/api/trips/${tripId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log("✅ Trip details obtenidos:", result.trip);
+        return result.trip;
+      } else {
+        throw new Error(result.message || "Error obteniendo detalles del trip");
+      }
+    } catch (error) {
+      console.error("❌ Error obteniendo detalles del trip:", error);
+      throw error;
+    }
+  };
+
   const value: TripContextType = {
     // Estado
     currentTrip,
@@ -867,8 +1049,6 @@ export function TripProvider({ children }: TripProviderProps) {
     selectDriver,
     acceptTrip,
     rejectTrip,
-    makeCounterOffer,
-    acceptCounterOffer,
     startTrip,
     completeTrip,
     cancelTrip,
@@ -884,8 +1064,15 @@ export function TripProvider({ children }: TripProviderProps) {
     getConnectedDrivers,
     refreshConnectedDrivers,
 
+    // Nuevas funciones para ofertas
+    sendTripOffer,
+    respondToOffer,
+    getTripNotifications,
+    refreshTripNotifications,
+
     // Utilidades
     getTripById,
+    getTripDetails,
     getUnreadNotificationCount,
     refreshTripData,
   };

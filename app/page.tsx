@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTrip } from "@/contexts/TripContext";
 import DriverDashboard from "@/components/driver/DriverDashboard";
 import ClientDashboard from "@/components/client/ClientDashboard";
 import {
@@ -71,6 +72,7 @@ interface Testimonial {
 export default function TaxiSeguroApp() {
   // Hook de autenticación
   const { user: authUser, login, register, logout, loading } = useAuth();
+  const { respondToOffer } = useTrip();
 
   // Estados principales
   const [currentScreen, setCurrentScreen] = useState<
@@ -956,6 +958,7 @@ export default function TaxiSeguroApp() {
   if (isAuthenticated && user?.role !== "conductor") {
     return <ClientDashboard />;
   }
+
   // Si no está autenticado, mostrar la landing page
   return (
     <div className="min-h-screen bg-gradient-to-br from-dark via-gray-900 to-dark text-white overflow-hidden relative">

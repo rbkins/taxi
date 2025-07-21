@@ -7,6 +7,7 @@ import { useTrip } from "@/contexts/TripContext";
 import FloatingDriverButton from "@/components/auth/FloatingDriverButton";
 import ConvertToDriverModal from "@/components/auth/ConvertToDriverModal";
 import TripRequestForm from "@/components/trip/TripRequestForm";
+import MockMap from "@/components/map/MockMap";
 import {
   Car,
   Home,
@@ -28,6 +29,7 @@ import {
   Gift,
   Zap,
   ArrowRight,
+  Phone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,9 +57,31 @@ interface User {
 export default function ClientDashboard() {
   const { user: authUser, logout } = useAuth();
   const isMobile = useIsMobile();
+  const {
+    getTripNotifications,
+    refreshTripNotifications,
+    respondToOffer,
+    currentTrip,
+  } = useTrip();
+
   const [activeTab, setActiveTab] = useState("home");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
+  const [lastNotificationCheck, setLastNotificationCheck] = useState<Date>(
+    new Date()
+  );
+
+  // Estados para manejo de viaje
+  const [currentAcceptedTrip, setCurrentAcceptedTrip] = useState<any>(null);
+  const [tripStatus, setTripStatus] = useState<
+    "idle" | "accepted" | "in-progress" | "completed"
+  >("idle");
+  const [tripProgress, setTripProgress] = useState(0);
+  const [showTripNotification, setShowTripNotification] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState("");
+  const [notificationType, setNotificationType] = useState<"success" | "error">(
+    "success"
+  );
 
   const [user, setUser] = useState<User>({
     name: authUser?.name || "Usuario",
@@ -98,6 +122,134 @@ export default function ClientDashboard() {
       setIsMobileMenuOpen(false);
     }
   }, [isMobile]);
+
+  // Revisar notificaciones de ofertas
+  useEffect(() => {
+    const checkNotifications = async () => {
+      try {
+        console.log("🔍 Cliente revisando notificaciones...");
+        const notifications = await getTripNotifications();
+
+        // Filtrar solo las notificaciones nuevas desde la última revisión
+        const newNotifications = notifications.filter((notification) => {
+          const notificationDate = new Date(notification.createdAt);
+          return notificationDate > lastNotificationCheck;
+        });
+
+        console.log("📬 Notificaciones nuevas encontradas:", newNotifications);
+
+        // Procesar notificaciones para mostrar al usuario
+        newNotifications.forEach((notification) => {
+          if (notification.type === "trip-accepted") {
+            console.log("✅ Viaje aceptado:", notification.data?.driverName);
+
+            // Configurar el viaje aceptado con ubicaciones válidas por defecto
+            setCurrentAcceptedTrip({
+              id: notification.tripId,
+              driverName: notification.data?.driverName || "Conductor",
+              driverPhone: notification.data?.driverPhone || "N/A",
+              vehiclePlate: notification.data?.vehiclePlate || "N/A",
+              estimatedTime: notification.data?.estimatedTime || "5 min",
+              origin: notification.data?.origin || {
+                address: "Ubicación de origen",
+                lat: 14.1,
+                lng: -87.2,
+              },
+              destination: notification.data?.destination || {
+                address: "Destino",
+                lat: 14.12,
+                lng: -87.18,
+              },
+              driverLocation: notification.data?.driverLocation || {
+                address: "Ubicación del conductor",
+                lat: 14.1,
+                lng: -87.2,
+              },
+            });
+
+            setTripStatus("accepted");
+            setNotificationMessage(
+              `¡Tu viaje ha sido aceptado por ${
+                notification.data?.driverName || "el conductor"
+              }!`
+            );
+            setNotificationType("success");
+            setShowTripNotification(true);
+
+            // Ocultar notificación después de 5 segundos
+            setTimeout(() => setShowTripNotification(false), 5000);
+
+            // Iniciar simulación del viaje después de 3 segundos
+            setTimeout(() => {
+              setTripStatus("in-progress");
+              setTripProgress(0);
+            }, 3000);
+          } else if (notification.type === "trip-rejected") {
+            console.log("❌ Viaje rechazado:", notification.data?.driverName);
+
+            setNotificationMessage(
+              `${
+                notification.data?.driverName || "El conductor"
+              } no pudo aceptar tu solicitud. Intenta con otro conductor.`
+            );
+            setNotificationType("error");
+            setShowTripNotification(true);
+
+            // Ocultar notificación después de 5 segundos
+            setTimeout(() => setShowTripNotification(false), 5000);
+          }
+        });
+
+        if (newNotifications.length > 0) {
+          setLastNotificationCheck(new Date());
+        }
+      } catch (error) {
+        console.error("❌ Error al revisar notificaciones:", error);
+      }
+    };
+
+    // Revisar notificaciones inmediatamente
+    checkNotifications();
+
+    // Configurar intervalo para revisar cada 3 segundos
+    const interval = setInterval(checkNotifications, 3000);
+
+    return () => clearInterval(interval);
+  }, [getTripNotifications, lastNotificationCheck]);
+
+  // Simulación del progreso del viaje
+  useEffect(() => {
+    if (tripStatus === "in-progress") {
+      const interval = setInterval(() => {
+        setTripProgress((prev) => {
+          if (prev >= 100) {
+            // Viaje completado
+            setTripStatus("completed");
+            setNotificationMessage(
+              "¡Viaje completado! ¿Cómo calificas tu experiencia?"
+            );
+            setNotificationType("success");
+            setShowTripNotification(true);
+
+            // Después de 3 segundos, reset y ir al historial
+            setTimeout(() => {
+              setShowTripNotification(false);
+              setCurrentAcceptedTrip(null);
+              setTripStatus("idle");
+              setTripProgress(0);
+              setActiveTab("history"); // Cambiar a la pestaña de historial
+            }, 3000);
+
+            clearInterval(interval);
+            return 100;
+          }
+          return prev + 2; // Incrementar 2% cada segundo (50 segundos total)
+        });
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [tripStatus]);
 
   // Prevenir scroll del body cuando el menú móvil esté abierto
   useEffect(() => {
@@ -294,8 +446,119 @@ export default function ClientDashboard() {
 
         {/* Content Area */}
         <div className="p-4 lg:p-6">
-          {/* Home Tab - Solicitar Viaje */}
-          {activeTab === "home" && (
+          {/* Notificación flotante */}
+          {showTripNotification && (
+            <div
+              className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg border-l-4 ${
+                notificationType === "success"
+                  ? "bg-green-50 border-green-500 text-green-800"
+                  : "bg-red-50 border-red-500 text-red-800"
+              } animate-fade-in max-w-sm`}
+            >
+              <div className="flex items-center">
+                {notificationType === "success" ? (
+                  <CheckCircle className="w-5 h-5 mr-2" />
+                ) : (
+                  <X className="w-5 h-5 mr-2" />
+                )}
+                <p className="font-medium">{notificationMessage}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Viaje en progreso */}
+          {(tripStatus === "accepted" || tripStatus === "in-progress") &&
+            currentAcceptedTrip && (
+              <div className="space-y-4 lg:space-y-6 mb-6">
+                <Card className="bg-gradient-to-r from-taxi-yellow/10 to-yellow-50 border-taxi-yellow shadow-lg">
+                  <CardHeader>
+                    <CardTitle className="text-dark flex items-center space-x-2">
+                      <Car className="w-6 h-6 text-taxi-yellow" />
+                      <span>
+                        {tripStatus === "accepted"
+                          ? "Viaje Aceptado"
+                          : "Viaje en Progreso"}
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-bold text-dark text-lg">
+                          {currentAcceptedTrip.driverName}
+                        </h3>
+                        <p className="text-gray-600">
+                          {currentAcceptedTrip.vehiclePlate} • ETA:{" "}
+                          {currentAcceptedTrip.estimatedTime}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <Badge className="bg-success text-white">
+                          {tripStatus === "accepted"
+                            ? "Conductor en camino"
+                            : "En ruta"}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {tripStatus === "in-progress" && (
+                      <div className="space-y-3">
+                        <div className="flex justify-between text-sm text-gray-600">
+                          <span>Progreso del viaje</span>
+                          <span>{tripProgress}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-gradient-to-r from-taxi-yellow to-yellow-400 h-2 rounded-full transition-all duration-1000"
+                            style={{ width: `${tripProgress}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Mini mapa */}
+                    <div className="h-48 rounded-lg overflow-hidden border">
+                      <MockMap
+                        origin={currentAcceptedTrip.origin}
+                        destination={currentAcceptedTrip.destination}
+                        drivers={[
+                          {
+                            id: currentAcceptedTrip.id,
+                            name: currentAcceptedTrip.driverName,
+                            currentLocation:
+                              currentAcceptedTrip.driverLocation ||
+                              currentAcceptedTrip.origin,
+                          },
+                        ]}
+                        selectedDriver={currentAcceptedTrip.id}
+                        showRoute={true}
+                        className="w-full h-full"
+                      />
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
+                      <Button
+                        variant="outline"
+                        className="flex-1 border-taxi-yellow text-taxi-yellow hover:bg-taxi-yellow hover:text-dark"
+                      >
+                        <Phone className="w-4 h-4 mr-2" />
+                        Llamar Conductor
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1 border-gray-300 text-gray-600 hover:bg-gray-100"
+                      >
+                        <MapPin className="w-4 h-4 mr-2" />
+                        Compartir Ubicación
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+          {/* Home Tab - Solicitar Viaje (solo mostrar si no hay viaje en progreso) */}
+          {activeTab === "home" && tripStatus === "idle" && (
             <TripRequestForm
               onTripRequested={(tripId) => {
                 console.log("Trip requested:", tripId);
@@ -303,6 +566,27 @@ export default function ClientDashboard() {
               }}
             />
           )}
+
+          {/* Mensaje cuando hay viaje en progreso */}
+          {activeTab === "home" &&
+            tripStatus !== "idle" &&
+            tripStatus !== "completed" && (
+              <Card className="bg-white shadow-lg border-0">
+                <CardContent className="p-8 text-center">
+                  <Car className="w-12 h-12 mx-auto mb-4 text-taxi-yellow" />
+                  <h3 className="text-xl font-bold text-dark mb-2">
+                    {tripStatus === "accepted"
+                      ? "Conductor en camino"
+                      : "Viaje en progreso"}
+                  </h3>
+                  <p className="text-gray-600">
+                    {tripStatus === "accepted"
+                      ? "Tu conductor está en camino. Te notificaremos cuando llegue."
+                      : "Estás en camino a tu destino. Disfruta el viaje."}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
           {/* History Tab */}
           {activeTab === "history" && (

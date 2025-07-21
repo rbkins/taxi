@@ -35,6 +35,19 @@ export default function MockMap({
 
   // Convertir coordenadas a posición en el mapa (simplificado)
   const getMapPosition = (location: Location) => {
+    // Validar que location tenga las propiedades necesarias
+    if (
+      !location ||
+      typeof location.lng !== "number" ||
+      typeof location.lat !== "number"
+    ) {
+      // Retornar posición por defecto si no hay ubicación válida
+      return {
+        left: "50%",
+        top: "50%",
+      };
+    }
+
     // Área aproximada de Tegucigalpa para el mapa
     const bounds = {
       north: 14.15,
@@ -178,30 +191,39 @@ export default function MockMap({
       )}
 
       {/* Conductores disponibles */}
-      {drivers.map((driver) => (
-        <div
-          key={driver.id}
-          className="absolute transform -translate-x-1/2 -translate-y-1/2 z-20"
-          style={getMapPosition(driver.currentLocation)}
-        >
-          <div
-            className={`${
-              selectedDriver === driver.id
-                ? "bg-taxi-yellow border-dark"
-                : "bg-blue-500 border-white"
-            } rounded-full p-2 shadow-lg border-2 transition-all duration-300`}
-          >
-            <Car className="w-3 h-3 text-white" />
-          </div>
-          {selectedDriver === driver.id && (
-            <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-1">
-              <div className="bg-taxi-yellow px-2 py-1 rounded shadow-md text-xs font-medium whitespace-nowrap text-dark">
-                {driver.name}
+      {drivers
+        ?.map((driver) => {
+          // Validar que el conductor y su ubicación existan
+          if (!driver || !driver.currentLocation) {
+            return null;
+          }
+
+          return (
+            <div
+              key={driver.id}
+              className="absolute transform -translate-x-1/2 -translate-y-1/2 z-20"
+              style={getMapPosition(driver.currentLocation)}
+            >
+              <div
+                className={`${
+                  selectedDriver === driver.id
+                    ? "bg-taxi-yellow border-dark"
+                    : "bg-blue-500 border-white"
+                } rounded-full p-2 shadow-lg border-2 transition-all duration-300`}
+              >
+                <Car className="w-3 h-3 text-white" />
               </div>
+              {selectedDriver === driver.id && (
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-1">
+                  <div className="bg-taxi-yellow px-2 py-1 rounded shadow-md text-xs font-medium whitespace-nowrap text-dark">
+                    {driver.name}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      ))}
+          );
+        })
+        .filter(Boolean)}
 
       {/* Controles del mapa */}
       <div className="absolute top-2 right-2 flex flex-col space-y-1">

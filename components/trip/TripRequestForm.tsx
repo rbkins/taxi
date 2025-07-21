@@ -42,13 +42,7 @@ interface TripRequestFormProps {
 export default function TripRequestForm({
   onTripRequested,
 }: TripRequestFormProps) {
-  const {
-    createTripRequest,
-    selectDriver,
-    currentTrip,
-    isLoading,
-    connectedDrivers,
-  } = useTrip();
+  const { connectedDrivers, sendTripOffer, isLoading } = useTrip();
 
   // Estados del formulario
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
@@ -157,20 +151,8 @@ export default function TripRequestForm({
       console.log("💰 Fare:", proposedFare);
 
       setShowFareModal(false);
-      const tripId = await createTripRequest(
-        currentLocation,
-        destination,
-        proposedFare
-      );
-
-      console.log("✅ Trip created with ID:", tripId);
-      console.log(
-        "👥 Available drivers:",
-        currentTrip?.availableDrivers?.length || 0
-      );
-
       setShowDriversModal(true);
-      onTripRequested?.(tripId);
+      onTripRequested?.("temp-id");
     } catch (error) {
       console.error("❌ Error creating trip:", error);
       setError("Error al crear la solicitud de viaje");
@@ -178,16 +160,29 @@ export default function TripRequestForm({
   };
 
   const handleSelectDriver = async (driverId: string) => {
-    if (!currentTrip) return;
+    if (!currentLocation || !destination) return;
 
     try {
       setSelectedDriverId(driverId);
-      await selectDriver(currentTrip.id, driverId);
+      console.log("📤 Enviando solicitud a conductor:", driverId);
+
+      const tripId = await sendTripOffer(
+        driverId,
+        currentLocation,
+        destination,
+        proposedFare
+      );
+
+      console.log("✅ Solicitud enviada con ID:", tripId);
       setShowDriversModal(false);
       setSelectedDriverId(null);
+
+      // Mostrar mensaje de éxito
+      setError("");
+      // Aquí podrías agregar una notificación de éxito
     } catch (error) {
-      console.error("Error selecting driver:", error);
-      setError("Error al seleccionar el conductor");
+      console.error("Error sending trip offer:", error);
+      setError("Error al enviar la solicitud al conductor");
       setSelectedDriverId(null);
     }
   };
@@ -199,7 +194,7 @@ export default function TripRequestForm({
         <h4 className="font-semibold">DEBUG INFO</h4>
         <div>Connected Drivers Count: {connectedDrivers.length}</div>
         <div>
-          Available Drivers Count: {currentTrip?.availableDrivers?.length || 0}
+          Available Drivers: {connectedDrivers.filter((d) => d.isOnline).length}
         </div>
         <div>
           Connected Drivers:{" "}
@@ -209,17 +204,6 @@ export default function TripRequestForm({
               name: d.name,
               isOnline: d.isOnline,
             })),
-            null,
-            2
-          )}
-        </div>
-        <div>
-          Available Drivers:{" "}
-          {JSON.stringify(
-            currentTrip?.availableDrivers?.map((d: any) => ({
-              id: d.id,
-              name: d.name,
-            })) || [],
             null,
             2
           )}
@@ -442,16 +426,18 @@ export default function TripRequestForm({
           </DialogHeader>
 
           {/* Mapa con conductores */}
-          {currentTrip && (
+          {currentLocation && destination && (
             <div className="mb-4">
               <MockMap
-                origin={currentTrip.origin}
-                destination={currentTrip.destination}
-                drivers={currentTrip.availableDrivers.map((d) => ({
-                  id: d.id,
-                  name: d.name,
-                  currentLocation: d.currentLocation,
-                }))}
+                origin={currentLocation}
+                destination={destination}
+                drivers={connectedDrivers
+                  .filter((d) => d.isOnline)
+                  .map((d) => ({
+                    id: d.id,
+                    name: d.name,
+                    currentLocation: d.currentLocation,
+                  }))}
                 selectedDriver={selectedDriverId || undefined}
                 showRoute={true}
                 className="h-40 w-full"
@@ -460,65 +446,67 @@ export default function TripRequestForm({
           )}
 
           <div className="space-y-3">
-            {currentTrip?.availableDrivers.map((driver) => (
-              <Card
-                key={driver.id}
-                className="border-2 hover:border-taxi-yellow/50 transition-colors cursor-pointer"
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 bg-gradient-to-r from-taxi-yellow to-yellow-400 rounded-full flex items-center justify-center">
-                        <User className="w-6 h-6 text-dark" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-dark">
-                          {driver.name}
-                        </h3>
-                        <div className="flex items-center space-x-2 text-sm text-gray-600">
-                          <Star className="w-3 h-3 text-taxi-yellow fill-current" />
-                          <span>{driver.rating}</span>
-                          <span>•</span>
-                          <span>{driver.distance.toFixed(1)}km</span>
+            {connectedDrivers
+              .filter((d) => d.isOnline)
+              .map((driver) => (
+                <Card
+                  key={driver.id}
+                  className="border-2 hover:border-taxi-yellow/50 transition-colors cursor-pointer"
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-12 h-12 bg-gradient-to-r from-taxi-yellow to-yellow-400 rounded-full flex items-center justify-center">
+                          <User className="w-6 h-6 text-dark" />
                         </div>
-                        <p className="text-xs text-gray-500">
-                          {driver.vehicleInfo.color} {driver.vehicleInfo.make}{" "}
-                          {driver.vehicleInfo.model}
-                        </p>
-                        <p className="text-xs font-mono text-gray-600">
-                          {driver.vehicleInfo.plate}
-                        </p>
+                        <div>
+                          <h3 className="font-semibold text-dark">
+                            {driver.name}
+                          </h3>
+                          <div className="flex items-center space-x-2 text-sm text-gray-600">
+                            <Star className="w-3 h-3 text-taxi-yellow fill-current" />
+                            <span>{driver.rating}</span>
+                            <span>•</span>
+                            <span>En línea</span>
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            {driver.vehicleInfo.color} {driver.vehicleInfo.make}{" "}
+                            {driver.vehicleInfo.model}
+                          </p>
+                          <p className="text-xs font-mono text-gray-600">
+                            {driver.vehicleInfo.plate}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right space-y-1">
+                        <Badge className="bg-success text-white">
+                          <Clock className="w-3 h-3 mr-1" />
+                          ~5 min
+                        </Badge>
+                        <Button
+                          size="sm"
+                          onClick={() => handleSelectDriver(driver.id)}
+                          disabled={isLoading || selectedDriverId === driver.id}
+                          className="w-full bg-taxi-yellow text-dark hover:bg-yellow-400"
+                        >
+                          {selectedDriverId === driver.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <>
+                              Enviar Solicitud
+                              <ArrowRight className="w-4 h-4 ml-1" />
+                            </>
+                          )}
+                        </Button>
                       </div>
                     </div>
-
-                    <div className="text-right space-y-1">
-                      <Badge className="bg-success text-white">
-                        <Clock className="w-3 h-3 mr-1" />
-                        {driver.estimatedArrival} min
-                      </Badge>
-                      <Button
-                        size="sm"
-                        onClick={() => handleSelectDriver(driver.id)}
-                        disabled={isLoading || selectedDriverId === driver.id}
-                        className="w-full bg-taxi-yellow text-dark hover:bg-yellow-400"
-                      >
-                        {selectedDriverId === driver.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <>
-                            Seleccionar
-                            <ArrowRight className="w-4 h-4 ml-1" />
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              ))}
           </div>
 
-          {currentTrip?.availableDrivers.length === 0 && (
+          {connectedDrivers.filter((d) => d.isOnline).length === 0 && (
             <div className="text-center py-8 text-gray-500">
               <Car className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <p className="font-medium">

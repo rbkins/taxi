@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import TripOfferStatus from "@/components/TripOfferStatus";
 
 interface Trip {
   id: string;
@@ -57,6 +58,7 @@ export default function DriverDashboard() {
     notifications,
     markNotificationAsRead,
     refreshConnectedDrivers,
+    respondToOffer,
   } = useTrip();
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -87,28 +89,52 @@ export default function DriverDashboard() {
     completionRate: 95,
   });
 
-  const [availableTrips] = useState<Trip[]>([
-    {
-      id: "1",
-      passenger: "María González",
-      origin: "Centro Comercial Plaza",
-      destination: "Aeropuerto Internacional",
-      status: "pending",
-      price: "$25.00",
-      distance: "12.5 km",
-      time: "25 min",
-    },
-    {
-      id: "2",
-      passenger: "Carlos Ruiz",
-      origin: "Universidad Nacional",
-      destination: "Zona Rosa",
-      status: "pending",
-      price: "$15.00",
-      distance: "8.2 km",
-      time: "18 min",
-    },
-  ]);
+  // Filtrar notificaciones de solicitudes de viaje para este conductor
+  console.log("🔍 Driver ID:", driverId);
+  console.log("🔍 All notifications:", notifications);
+  console.log("🔍 Filtering notifications for driverId:", driverId);
+
+  const tripNotifications = notifications.filter((n) => {
+    console.log("🔍 Checking notification:", {
+      id: n.id,
+      recipientId: n.recipientId,
+      type: n.type,
+      read: n.read,
+      matches:
+        n.recipientId === driverId && n.type === "trip-request" && !n.read,
+    });
+    return n.recipientId === driverId && n.type === "trip-request" && !n.read;
+  });
+
+  console.log("🎯 Filtered trip notifications:", tripNotifications);
+
+  // Función para aceptar oferta
+  const handleAcceptOffer = async (offerId: string) => {
+    try {
+      await respondToOffer(offerId, "accept");
+      console.log("✅ Oferta aceptada");
+
+      // Simular duración del viaje (30 segundos) y luego ir a trips
+      setTimeout(() => {
+        console.log("🏁 Viaje completado - Redirigiendo a historial");
+        setActiveTab("trips");
+      }, 30000); // 30 segundos
+    } catch (error) {
+      console.error("❌ Error aceptando oferta:", error);
+      alert("Error al aceptar la oferta");
+    }
+  };
+
+  // Función para rechazar oferta
+  const handleRejectOffer = async (offerId: string) => {
+    try {
+      await respondToOffer(offerId, "reject");
+      console.log("❌ Oferta rechazada");
+    } catch (error) {
+      console.error("❌ Error rechazando oferta:", error);
+      alert("Error al rechazar la oferta");
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -679,56 +705,59 @@ export default function DriverDashboard() {
                   <Card className="bg-white shadow-lg border-0">
                     <CardHeader>
                       <CardTitle className="text-dark flex items-center space-x-2">
-                        <MapPin className="w-6 h-6 text-taxi-yellow" />
-                        <span>Viajes Disponibles</span>
+                        <AlertCircle className="w-6 h-6 text-taxi-yellow" />
+                        <span>Solicitudes de Viaje</span>
+                        {tripNotifications.length > 0 && (
+                          <Badge className="bg-error text-white">
+                            {tripNotifications.length}
+                          </Badge>
+                        )}
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      {availableTrips.map((trip) => (
-                        <Card
-                          key={trip.id}
-                          className="bg-gray-50 border-gray-200 hover:shadow-md transition-all duration-300"
-                        >
-                          <CardContent className="p-4">
-                            <div className="flex items-center justify-between mb-3">
-                              <div>
-                                <h4 className="font-semibold text-dark">
-                                  {trip.passenger}
-                                </h4>
-                                <p className="text-sm text-gray-600">
-                                  {trip.distance} • {trip.time}
-                                </p>
-                              </div>
-                              <div className="text-right flex flex-col items-end">
-                                <p className="text-xl font-bold text-dark mb-2">
-                                  {trip.price}
-                                </p>
-                                <Button
-                                  onClick={() => acceptTrip(trip)}
-                                  className="bg-gradient-to-r from-taxi-yellow to-yellow-400 hover:from-yellow-400 hover:to-taxi-yellow text-dark font-semibold px-4 py-2"
-                                  size="sm"
-                                >
-                                  Aceptar
-                                </Button>
-                              </div>
-                            </div>
-
-                            <div className="flex items-start space-x-2 text-sm">
-                              <div className="flex flex-col items-center space-y-1">
-                                <div className="w-2 h-2 bg-success rounded-full"></div>
-                                <div className="w-0.5 h-4 bg-gray-300"></div>
-                                <div className="w-2 h-2 bg-error rounded-full"></div>
-                              </div>
-                              <div className="space-y-2">
-                                <p className="text-gray-600">{trip.origin}</p>
-                                <p className="text-gray-600">
-                                  {trip.destination}
-                                </p>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
+                      {tripNotifications.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                          <MapPin className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                          <p>No hay solicitudes de viaje en este momento</p>
+                          <p className="text-sm">
+                            Mantente conectado para recibir ofertas
+                          </p>
+                        </div>
+                      ) : (
+                        tripNotifications.map((notification) => {
+                          return (
+                            <TripOfferStatus
+                              key={notification.id}
+                              offer={{
+                                id:
+                                  notification.tripId?.toString() ||
+                                  notification.id,
+                                clientName:
+                                  notification.clientName || "Cliente",
+                                origin: notification.origin || {
+                                  address: "N/A",
+                                  lat: 0,
+                                  lng: 0,
+                                },
+                                destination: notification.destination || {
+                                  address: "N/A",
+                                  lat: 0,
+                                  lng: 0,
+                                },
+                                proposedFare: notification.currentOffer || 0,
+                                distance: notification.distance || 0,
+                                estimatedTime: notification.estimatedTime || 0,
+                                createdAt: new Date(
+                                  notification.createdAt || Date.now()
+                                ),
+                                status: "pending",
+                              }}
+                              onAccept={handleAcceptOffer}
+                              onReject={handleRejectOffer}
+                            />
+                          );
+                        })
+                      )}
                     </CardContent>
                   </Card>
                 )
