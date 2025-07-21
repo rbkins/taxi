@@ -7,6 +7,7 @@ import { useTrip } from "@/contexts/TripContext";
 import FloatingDriverButton from "@/components/auth/FloatingDriverButton";
 import ConvertToDriverModal from "@/components/auth/ConvertToDriverModal";
 import TripRequestForm from "@/components/trip/TripRequestForm";
+import WaitingForResponseModal from "@/components/client/WaitingForResponseModal";
 import MockMap from "@/components/map/MockMap";
 import {
   Car,
@@ -83,6 +84,15 @@ export default function ClientDashboard() {
     "success"
   );
 
+  // Estados para el modal de espera de respuesta
+  const [showWaitingModal, setShowWaitingModal] = useState(false);
+  const [waitingModalResponse, setWaitingModalResponse] = useState<
+    "waiting" | "accepted" | "rejected" | null
+  >(null);
+  const [waitingStartTime, setWaitingStartTime] = useState<Date | null>(null);
+  const [timeElapsed, setTimeElapsed] = useState(0);
+  const [pendingTripData, setPendingTripData] = useState<any>(null);
+
   const [user, setUser] = useState<User>({
     name: authUser?.name || "Usuario",
     email: authUser?.email || "email@ejemplo.com",
@@ -123,6 +133,29 @@ export default function ClientDashboard() {
     }
   }, [isMobile]);
 
+  // Contador de tiempo para el modal de espera
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
+    if (
+      showWaitingModal &&
+      waitingStartTime &&
+      waitingModalResponse === "waiting"
+    ) {
+      interval = setInterval(() => {
+        const now = new Date();
+        const elapsed = Math.floor(
+          (now.getTime() - waitingStartTime.getTime()) / 1000
+        );
+        setTimeElapsed(elapsed);
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [showWaitingModal, waitingStartTime, waitingModalResponse]);
+
   // Revisar notificaciones de ofertas
   useEffect(() => {
     const checkNotifications = async () => {
@@ -142,6 +175,15 @@ export default function ClientDashboard() {
         newNotifications.forEach((notification) => {
           if (notification.type === "trip-accepted") {
             console.log("✅ Viaje aceptado:", notification.data?.driverName);
+
+            // Actualizar modal de espera si está abierto
+            if (showWaitingModal && waitingModalResponse === "waiting") {
+              setWaitingModalResponse("accepted");
+              // Ocultar modal después de 3 segundos para mostrar el viaje
+              setTimeout(() => {
+                setShowWaitingModal(false);
+              }, 3000);
+            }
 
             // Configurar el viaje aceptado con ubicaciones válidas por defecto
             setCurrentAcceptedTrip({
@@ -186,6 +228,17 @@ export default function ClientDashboard() {
             }, 3000);
           } else if (notification.type === "trip-rejected") {
             console.log("❌ Viaje rechazado:", notification.data?.driverName);
+
+            // Actualizar modal de espera si está abierto
+            if (showWaitingModal && waitingModalResponse === "waiting") {
+              setWaitingModalResponse("rejected");
+              // Ocultar modal después de 5 segundos para permitir nueva búsqueda
+              setTimeout(() => {
+                setShowWaitingModal(false);
+                setWaitingModalResponse(null);
+                setPendingTripData(null);
+              }, 5000);
+            }
 
             setNotificationMessage(
               `${
@@ -277,6 +330,15 @@ export default function ClientDashboard() {
 
   const handleLogout = () => {
     logout();
+  };
+
+  // Función para manejar el cierre del modal de espera
+  const handleCloseWaitingModal = () => {
+    setShowWaitingModal(false);
+    setWaitingModalResponse(null);
+    setPendingTripData(null);
+    setWaitingStartTime(null);
+    setTimeElapsed(0);
   };
 
   // Sidebar Navigation
@@ -562,7 +624,15 @@ export default function ClientDashboard() {
             <TripRequestForm
               onTripRequested={(tripId) => {
                 console.log("Trip requested:", tripId);
-                // Aquí podrías agregar lógica adicional si necesitas
+              }}
+              onTripOfferSent={(tripData) => {
+                console.log("Trip offer sent:", tripData);
+                // Mostrar modal de espera
+                setPendingTripData(tripData);
+                setWaitingModalResponse("waiting");
+                setWaitingStartTime(new Date());
+                setTimeElapsed(0);
+                setShowWaitingModal(true);
               }}
             />
           )}
@@ -748,6 +818,23 @@ export default function ClientDashboard() {
             }}
           />
         </>
+      )}
+
+      {/* Modal de espera de respuesta */}
+      {pendingTripData && (
+        <WaitingForResponseModal
+          isOpen={showWaitingModal}
+          onClose={handleCloseWaitingModal}
+          tripData={{
+            origin: pendingTripData.origin,
+            destination: pendingTripData.destination,
+            proposedFare: pendingTripData.proposedFare,
+            distance: pendingTripData.distance,
+            estimatedTime: pendingTripData.estimatedTime,
+          }}
+          responseStatus={waitingModalResponse}
+          timeElapsed={timeElapsed}
+        />
       )}
     </div>
   );

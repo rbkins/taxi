@@ -37,10 +37,20 @@ import {
 
 interface TripRequestFormProps {
   onTripRequested?: (tripId: string) => void;
+  onTripOfferSent?: (tripData: {
+    tripId: string;
+    driverId: string;
+    origin: Location;
+    destination: Location;
+    proposedFare: number;
+    distance?: number;
+    estimatedTime?: number;
+  }) => void;
 }
 
 export default function TripRequestForm({
   onTripRequested,
+  onTripOfferSent,
 }: TripRequestFormProps) {
   const { connectedDrivers, sendTripOffer, isLoading } = useTrip();
 
@@ -176,6 +186,22 @@ export default function TripRequestForm({
       console.log("✅ Solicitud enviada con ID:", tripId);
       setShowDriversModal(false);
       setSelectedDriverId(null);
+
+      // Llamar callback con los datos del viaje
+      onTripOfferSent?.({
+        tripId,
+        driverId,
+        origin: currentLocation,
+        destination,
+        proposedFare,
+        distance: locationService.calculateDistance(
+          currentLocation,
+          destination
+        ),
+        estimatedTime: Math.ceil(
+          locationService.calculateDistance(currentLocation, destination) * 2
+        ), // Estimación simple: 2 min por km
+      });
 
       // Mostrar mensaje de éxito
       setError("");
