@@ -148,6 +148,10 @@ interface TripContextType {
   getTripById: (tripId: string) => Trip | null;
   getUnreadNotificationCount: () => number;
   refreshTripData: () => Promise<void>;
+
+  // Historial de viajes
+  getTripHistory: () => Promise<any[]>;
+  markTripAsCompleted: (tripId: string) => Promise<void>;
 }
 
 const TripContext = createContext<TripContextType | undefined>(undefined);
@@ -1036,6 +1040,87 @@ export function TripProvider({ children }: TripProviderProps) {
     }
   };
 
+  // Nueva función: Obtener historial de viajes
+  const getTripHistory = async (): Promise<any[]> => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.log("⚠️ No token found, cannot get trip history");
+        return [];
+      }
+
+      const response = await fetch("/api/trips/history", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        console.log(`⚠️ Trip history API returned ${response.status}`);
+        return [];
+      }
+
+      const result = await response.json();
+      console.log("📋 Trip history API response:", result);
+
+      if (result.success) {
+        console.log("✅ Trip history received:", result.trips.length);
+        return result.trips;
+      }
+
+      return [];
+    } catch (error) {
+      console.error("❌ Error getting trip history:", error);
+      return [];
+    }
+  };
+
+  // Nueva función: Marcar viaje como completado
+  const markTripAsCompleted = async (tripId: string): Promise<void> => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("No hay token de autenticación");
+      }
+
+      const response = await fetch("/api/trips/history", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ tripId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("❌ Complete trip API error:", {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+          tripId,
+        });
+        throw new Error(
+          `Error completing trip: ${response.status} - ${
+            errorData.message || response.statusText
+          }`
+        );
+      }
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.message || "Error completing trip");
+      }
+
+      console.log("✅ Trip marked as completed:", tripId);
+    } catch (error) {
+      console.error("❌ Error marking trip as completed:", error);
+      throw error;
+    }
+  };
+
+  // Preparar valor del contexto
   const value: TripContextType = {
     // Estado
     currentTrip,
@@ -1075,6 +1160,10 @@ export function TripProvider({ children }: TripProviderProps) {
     getTripDetails,
     getUnreadNotificationCount,
     refreshTripData,
+
+    // Historial de viajes
+    getTripHistory,
+    markTripAsCompleted,
   };
 
   return <TripContext.Provider value={value}>{children}</TripContext.Provider>;

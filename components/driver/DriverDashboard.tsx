@@ -59,6 +59,8 @@ export default function DriverDashboard() {
     markNotificationAsRead,
     refreshConnectedDrivers,
     respondToOffer,
+    getTripHistory,
+    markTripAsCompleted,
   } = useTrip();
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -68,6 +70,7 @@ export default function DriverDashboard() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<any>(null);
   const [justUpdated, setJustUpdated] = useState(false); // Para evitar sobreescribir estado recién actualizado
+  const [driverTripHistory, setDriverTripHistory] = useState<any[]>([]);
 
   // ID consistente del conductor
   const driverId = authUser?.id;
@@ -295,6 +298,24 @@ export default function DriverDashboard() {
       document.body.style.overflow = "unset";
     };
   }, [isMobileMenuOpen]);
+
+  // Cargar historial de viajes cuando se accede a la pestaña trips
+  useEffect(() => {
+    const loadDriverTripHistory = async () => {
+      if (activeTab === "trips" && authUser?.id) {
+        try {
+          console.log("📋 Loading driver trip history...");
+          const history = await getTripHistory();
+          setDriverTripHistory(history);
+          console.log("✅ Driver trip history loaded:", history);
+        } catch (error) {
+          console.error("❌ Error loading driver trip history:", error);
+        }
+      }
+    };
+
+    loadDriverTripHistory();
+  }, [activeTab, authUser, getTripHistory]);
 
   // Sidebar Navigation
   const sidebarItems = [
@@ -538,10 +559,13 @@ export default function DriverDashboard() {
               </Badge>
               <div className="text-right hidden md:block">
                 <p className="text-sm font-medium text-dark">
-                  Hoy: {driverStats.todayEarnings}
+                  Total: $
+                  {driverTripHistory
+                    .reduce((sum, trip) => sum + (trip.fare || 0), 0)
+                    .toFixed(2)}
                 </p>
                 <p className="text-xs text-gray-500">
-                  ⭐ {driverStats.rating} • {driverStats.totalTrips} viajes
+                  ⭐ {driverStats.rating} • {driverTripHistory.length} viajes
                 </p>
               </div>
             </div>
@@ -557,15 +581,17 @@ export default function DriverDashboard() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
                 {[
                   {
-                    title: "Ganancias Hoy",
-                    value: driverStats.todayEarnings,
+                    title: "Ganancias Totales",
+                    value: `$${driverTripHistory
+                      .reduce((sum, trip) => sum + (trip.fare || 0), 0)
+                      .toFixed(2)}`,
                     icon: DollarSign,
                     color: "from-green-500 to-emerald-500",
                     change: "+15%",
                   },
                   {
                     title: "Viajes Completados",
-                    value: driverStats.totalTrips.toString(),
+                    value: driverTripHistory.length.toString(),
                     icon: Car,
                     color: "from-blue-500 to-cyan-500",
                     change: "+8%",
@@ -768,18 +794,131 @@ export default function DriverDashboard() {
           {/* Trips Tab */}
           {activeTab === "trips" && (
             <div className="space-y-4 lg:space-y-6">
-              <Card className="bg-white shadow-lg border-0">
-                <CardHeader>
-                  <CardTitle className="text-dark">
-                    Historial de Viajes
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-dark">Mis Viajes</h3>
                   <p className="text-gray-600">
-                    Próximamente: Historial completo de viajes realizados
+                    {driverTripHistory.length} viajes completados
                   </p>
-                </CardContent>
-              </Card>
+                </div>
+                <Badge className="bg-gradient-to-r from-taxi-yellow to-yellow-400 text-dark">
+                  Total: $
+                  {driverTripHistory
+                    .reduce((sum, trip) => sum + (trip.fare || 0), 0)
+                    .toFixed(2)}
+                </Badge>
+              </div>
+
+              {driverTripHistory.length === 0 ? (
+                <Card className="bg-white shadow-lg border-0">
+                  <CardContent className="p-8 text-center">
+                    <Car className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600">
+                      No tienes viajes completados aún
+                    </p>
+                    <p className="text-sm text-gray-500 mt-2">
+                      Tus viajes como conductor aparecerán aquí
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                driverTripHistory.map((trip) => (
+                  <Card
+                    key={trip.id || trip.tripId}
+                    className="bg-white shadow-lg border-0"
+                  >
+                    <CardContent className="p-4 lg:p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-gradient-to-r from-taxi-yellow to-yellow-400 rounded-full flex items-center justify-center">
+                            <Car className="w-5 h-5 text-dark" />
+                          </div>
+                          <div>
+                            <Badge className="bg-success text-white mb-1">
+                              Completado
+                            </Badge>
+                            <p className="text-sm text-gray-500">
+                              {new Date(trip.createdAt).toLocaleDateString(
+                                "es-ES"
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xl font-bold text-dark">
+                            ${trip.fare?.toFixed(2) || "0.00"}
+                          </p>
+                          <div className="flex items-center justify-end space-x-1 mt-1">
+                            {[...Array(5)].map((_, i) => (
+                              <Star
+                                key={i}
+                                className="w-3 h-3 text-taxi-yellow fill-current"
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-sm text-gray-500">Origen</p>
+                          <p className="font-medium text-dark">
+                            {typeof trip.origin === "string"
+                              ? trip.origin
+                              : trip.origin?.address || "No especificado"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500">Destino</p>
+                          <p className="font-medium text-dark">
+                            {typeof trip.destination === "string"
+                              ? trip.destination
+                              : trip.destination?.address || "No especificado"}
+                          </p>
+                        </div>
+                        {trip.passengerName && (
+                          <div>
+                            <p className="text-sm text-gray-500">Pasajero</p>
+                            <p className="font-medium text-dark">
+                              {trip.passengerName}
+                            </p>
+                          </div>
+                        )}
+                        {trip.distance && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Distancia:</span>
+                            <span className="font-medium">
+                              {trip.distance} km
+                            </span>
+                          </div>
+                        )}
+                        {trip.estimatedTime && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Tiempo:</span>
+                            <span className="font-medium">
+                              {trip.estimatedTime} min
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex justify-between items-center mt-4">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-taxi-yellow"
+                        >
+                          Ver detalles
+                          <Navigation className="w-4 h-4 ml-1" />
+                        </Button>
+                        <Badge variant="outline" className="text-xs">
+                          ID: {trip.id?.slice(-6) || "N/A"}
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           )}
 
