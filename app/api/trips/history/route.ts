@@ -99,11 +99,6 @@ async function getTripHistory(request: AuthenticatedRequest) {
       })
     );
 
-    console.log(
-      `✅ Found ${enrichedTrips.length} trips for ${user.role}:`,
-      request.user!.userId
-    );
-
     return NextResponse.json({
       success: true,
       trips: enrichedTrips,
@@ -159,8 +154,6 @@ async function completeTrip(request: AuthenticatedRequest) {
         { status: 404 }
       );
     }
-
-    console.log(`✅ Trip ${tripId} marked as completed`);
 
     return NextResponse.json({
       success: true,

@@ -31,11 +31,24 @@ import {
   Zap,
   ArrowRight,
   Phone,
+  Edit2,
+  Trash2,
+  Save,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface Trip {
   id: string;
@@ -105,6 +118,14 @@ export default function ClientDashboard() {
   const [realTripHistory, setRealTripHistory] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
+  // Estados para editar perfil
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editedName, setEditedName] = useState("");
+  const [editedEmail, setEditedEmail] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [isDeletingProfile, setIsDeletingProfile] = useState(false);
+
   // Estados para el formulario de viaje - REMOVIDO (ahora usa TripRequestForm)
 
   // Cerrar menú móvil cuando se cambia a desktop
@@ -145,7 +166,6 @@ export default function ClientDashboard() {
         try {
           const history = await getTripHistory();
           setRealTripHistory(history);
-          console.log("📋 Loaded trip history:", history);
         } catch (error) {
           console.error("❌ Error loading trip history:", error);
         } finally {
@@ -161,7 +181,6 @@ export default function ClientDashboard() {
   useEffect(() => {
     const checkNotifications = async () => {
       try {
-        console.log("🔍 Cliente revisando notificaciones...");
         const notifications = await getTripNotifications();
 
         // Filtrar solo las notificaciones nuevas desde la última revisión
@@ -170,13 +189,9 @@ export default function ClientDashboard() {
           return notificationDate > lastNotificationCheck;
         });
 
-        console.log("📬 Notificaciones nuevas encontradas:", newNotifications);
-
         // Procesar notificaciones para mostrar al usuario
         newNotifications.forEach((notification) => {
           if (notification.type === "trip-accepted") {
-            console.log("✅ Viaje aceptado:", notification.data?.driverName);
-
             // Actualizar modal de espera si está abierto
             if (showWaitingModal && waitingModalResponse === "waiting") {
               setWaitingModalResponse("accepted");
@@ -228,8 +243,6 @@ export default function ClientDashboard() {
               setTripProgress(0);
             }, 3000);
           } else if (notification.type === "trip-rejected") {
-            console.log("❌ Viaje rechazado:", notification.data?.driverName);
-
             // Actualizar modal de espera si está abierto
             if (showWaitingModal && waitingModalResponse === "waiting") {
               setWaitingModalResponse("rejected");
@@ -282,13 +295,9 @@ export default function ClientDashboard() {
 
             // Marcar viaje como completado en la base de datos
             if (currentAcceptedTrip?.id) {
-              markTripAsCompleted(currentAcceptedTrip.id)
-                .then(() => {
-                  console.log("✅ Trip marked as completed in database");
-                })
-                .catch((error) => {
-                  console.error("❌ Error marking trip as completed:", error);
-                });
+              markTripAsCompleted(currentAcceptedTrip.id).catch((error) => {
+                console.error("❌ Error marking trip as completed:", error);
+              });
             }
 
             setNotificationMessage("¡Viaje completado!");
@@ -339,6 +348,106 @@ export default function ClientDashboard() {
     }
   };
 
+  // Funciones del perfil
+  const handleEditProfile = () => {
+    setEditedName(authUser?.name || "");
+    setEditedEmail(authUser?.email || "");
+    setIsEditingProfile(true);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!editedName.trim() || !editedEmail.trim()) {
+      alert("Por favor completa todos los campos");
+      return;
+    }
+
+    setIsUpdatingProfile(true);
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("No hay token de autenticación");
+      }
+
+      const response = await fetch("/api/auth/profile", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: editedName.trim(),
+          email: editedEmail.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Error al actualizar perfil");
+      }
+
+      const updatedUser = await response.json();
+
+      // Actualizar usuario en AuthContext
+      setUser({
+        name: updatedUser.user.name,
+        email: updatedUser.user.email,
+        role: updatedUser.user.role,
+      });
+
+      setIsEditingProfile(false);
+      alert("Perfil actualizado exitosamente");
+    } catch (error) {
+      console.error("❌ Error updating profile:", error);
+      alert(
+        "Error al actualizar el perfil: " +
+          (error instanceof Error ? error.message : "Error desconocido")
+      );
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
+  const handleDeleteProfile = async () => {
+    setIsDeletingProfile(true);
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("No hay token de autenticación");
+      }
+
+      const response = await fetch("/api/auth/profile", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Error al eliminar perfil");
+      }
+
+      // Cerrar sesión después de eliminar
+      logout();
+      alert("Perfil eliminado exitosamente");
+    } catch (error) {
+      console.error("❌ Error deleting profile:", error);
+      alert(
+        "Error al eliminar el perfil: " +
+          (error instanceof Error ? error.message : "Error desconocido")
+      );
+    } finally {
+      setIsDeletingProfile(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingProfile(false);
+    setEditedName("");
+    setEditedEmail("");
+  };
+
   const handleLogout = () => {
     logout();
   };
@@ -356,7 +465,6 @@ export default function ClientDashboard() {
   const sidebarItems = [
     { id: "home", icon: Home, label: "Inicio" },
     { id: "history", icon: History, label: "Historial" },
-    { id: "wallet", icon: CreditCard, label: "Billetera" },
     { id: "profile", icon: UserIcon, label: "Perfil" },
   ];
 
@@ -490,13 +598,11 @@ export default function ClientDashboard() {
               <h2 className="text-xl lg:text-2xl font-bold text-dark">
                 {activeTab === "home" && "Solicitar Viaje"}
                 {activeTab === "history" && "Historial de Viajes"}
-                {activeTab === "wallet" && "Mi Billetera"}
                 {activeTab === "profile" && "Mi Perfil"}
               </h2>
               <p className="text-gray-600 hidden sm:block text-sm lg:text-base">
                 {activeTab === "home" && "¿A dónde te llevamos hoy?"}
                 {activeTab === "history" && "Revisa tus viajes anteriores"}
-                {activeTab === "wallet" && "Gestiona tus métodos de pago"}
                 {activeTab === "profile" && "Configuración de tu cuenta"}
               </p>
             </div>
@@ -634,10 +740,9 @@ export default function ClientDashboard() {
           {activeTab === "home" && tripStatus === "idle" && (
             <TripRequestForm
               onTripRequested={(tripId) => {
-                console.log("Trip requested:", tripId);
+                // Trip requested
               }}
               onTripOfferSent={(tripData) => {
-                console.log("Trip offer sent:", tripData);
                 // Mostrar modal de espera
                 setPendingTripData(tripData);
                 setWaitingModalResponse("waiting");
@@ -763,37 +868,10 @@ export default function ClientDashboard() {
                           </div>
                         )}
                       </div>
-
-                      <div className="flex justify-end mt-4">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-taxi-yellow"
-                        >
-                          Ver detalles
-                          <ArrowRight className="w-4 h-4 ml-1" />
-                        </Button>
-                      </div>
                     </CardContent>
                   </Card>
                 ))
               )}
-            </div>
-          )}
-
-          {/* Wallet Tab */}
-          {activeTab === "wallet" && (
-            <div className="space-y-4 lg:space-y-6">
-              <Card className="bg-white shadow-lg border-0">
-                <CardHeader>
-                  <CardTitle className="text-dark">Mi Billetera</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-gray-600">
-                    Próximamente: Gestión de métodos de pago
-                  </p>
-                </CardContent>
-              </Card>
             </div>
           )}
 
@@ -805,20 +883,52 @@ export default function ClientDashboard() {
                   <CardTitle className="text-dark">Mi Perfil</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  {/* Información del perfil */}
                   <div className="text-center space-y-4">
                     <div className="w-20 h-20 mx-auto bg-gradient-to-r from-taxi-yellow to-yellow-400 rounded-full flex items-center justify-center">
                       <UserIcon className="w-10 h-10 text-dark" />
                     </div>
-                    <div>
-                      <h3 className="font-bold text-dark text-lg">
-                        {user?.name || "Usuario"}
-                      </h3>
-                      <p className="text-gray-600">
-                        {user?.email || "Email no disponible"}
-                      </p>
-                    </div>
+
+                    {isEditingProfile ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">
+                            Nombre
+                          </label>
+                          <Input
+                            type="text"
+                            value={editedName}
+                            onChange={(e) => setEditedName(e.target.value)}
+                            className="mt-1"
+                            placeholder="Tu nombre"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">
+                            Email
+                          </label>
+                          <Input
+                            type="email"
+                            value={editedEmail}
+                            onChange={(e) => setEditedEmail(e.target.value)}
+                            className="mt-1"
+                            placeholder="tu@email.com"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <h3 className="font-bold text-dark text-lg">
+                          {user?.name || "Usuario"}
+                        </h3>
+                        <p className="text-gray-600">
+                          {user?.email || "Email no disponible"}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
+                  {/* Estadísticas */}
                   <div className="grid grid-cols-3 gap-4">
                     {[
                       {
@@ -842,10 +952,53 @@ export default function ClientDashboard() {
                     ))}
                   </div>
 
-                  <Button className="w-full bg-gradient-to-r from-taxi-yellow to-yellow-400 text-dark font-semibold py-3">
-                    <Settings className="w-4 h-4 mr-2" />
-                    Editar Perfil
-                  </Button>
+                  {/* Botones de acción */}
+                  {isEditingProfile ? (
+                    <div className="flex space-x-3">
+                      <Button
+                        onClick={handleSaveProfile}
+                        disabled={isUpdatingProfile}
+                        className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold py-3"
+                      >
+                        {isUpdatingProfile ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            Guardando...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-4 h-4 mr-2" />
+                            Guardar
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        onClick={handleCancelEdit}
+                        variant="outline"
+                        className="flex-1 py-3"
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <Button
+                        onClick={handleEditProfile}
+                        className="w-full bg-gradient-to-r from-taxi-yellow to-yellow-400 text-dark font-semibold py-3"
+                      >
+                        <Edit2 className="w-4 h-4 mr-2" />
+                        Editar Perfil
+                      </Button>
+                      <Button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        variant="outline"
+                        className="w-full border-red-200 text-red-600 hover:bg-red-50 py-3"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Eliminar Cuenta
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -883,6 +1036,49 @@ export default function ClientDashboard() {
           timeElapsed={timeElapsed}
         />
       )}
+
+      {/* Dialog de confirmación para eliminar cuenta */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center text-red-600">
+              <AlertTriangle className="w-5 h-5 mr-2" />
+              Eliminar Cuenta
+            </DialogTitle>
+            <DialogDescription>
+              Esta acción no se puede deshacer. Se eliminará permanentemente tu
+              cuenta y todos los datos asociados, incluyendo el historial de
+              viajes.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex space-x-3">
+            <Button
+              onClick={() => setShowDeleteConfirm(false)}
+              variant="outline"
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleDeleteProfile}
+              disabled={isUpdatingProfile}
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isUpdatingProfile ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Eliminar
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

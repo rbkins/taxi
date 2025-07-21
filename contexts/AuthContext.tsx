@@ -13,6 +13,16 @@ interface User {
   email: string;
   name: string;
   role: string;
+  phone?: string;
+  driverLicense?: string;
+  driverPhoto?: string;
+  vehicleInfo?: {
+    make: string;
+    model: string;
+    year: number;
+    plate: string;
+    color: string;
+  };
 }
 
 interface AuthContextType {

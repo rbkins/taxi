@@ -135,30 +135,56 @@ export default function TripRequestForm({
   };
 
   const handleRequestTrip = () => {
-    if (!currentLocation || !destination) {
-      setError("Por favor selecciona origen y destino");
+    if (!currentLocation) {
+      setError("Por favor selecciona el punto de origen");
       return;
     }
 
+    // Si no hay destino, usar valores por defecto
+    if (!destination) {
+      setDestination({
+        id: "default-destination",
+        name: "Destino no especificado",
+        address: "Destino no especificado",
+        lat: currentLocation.lat + 0.01,
+        lng: currentLocation.lng + 0.01,
+      });
+    }
+
     if (!fareEstimate) {
-      setError("Error calculando la tarifa");
-      return;
+      // Si no hay estimación, usar valores por defecto
+      setFareEstimate({
+        min: 5,
+        max: 15,
+        suggested: 10,
+      });
     }
 
     setShowFareModal(true);
   };
 
   const handleConfirmFare = async () => {
-    if (!currentLocation || !destination || proposedFare <= 0) {
-      setError("Datos incompletos para crear el viaje");
+    if (!currentLocation) {
+      setError("Origen requerido para crear el viaje");
       return;
     }
+
+    // Usar valores por defecto si faltan datos
+    const finalDestination = destination || {
+      id: "default-destination",
+      name: "Destino no especificado",
+      address: "Destino no especificado",
+      lat: currentLocation.lat + 0.01,
+      lng: currentLocation.lng + 0.01,
+    };
+
+    const finalFare = proposedFare > 0 ? proposedFare : 10; // Tarifa por defecto
 
     try {
       console.log("🚗 Creating trip request...");
       console.log("📍 Origin:", currentLocation);
-      console.log("🎯 Destination:", destination);
-      console.log("💰 Fare:", proposedFare);
+      console.log("🎯 Destination:", finalDestination);
+      console.log("💰 Fare:", finalFare);
 
       setShowFareModal(false);
       setShowDriversModal(true);
@@ -170,7 +196,18 @@ export default function TripRequestForm({
   };
 
   const handleSelectDriver = async (driverId: string) => {
-    if (!currentLocation || !destination) return;
+    if (!currentLocation) return;
+
+    // Usar valores por defecto si faltan datos
+    const finalDestination = destination || {
+      id: "default-destination",
+      name: "Destino no especificado",
+      address: "Destino no especificado",
+      lat: currentLocation.lat + 0.01,
+      lng: currentLocation.lng + 0.01,
+    };
+
+    const finalFare = proposedFare > 0 ? proposedFare : 10; // Tarifa por defecto
 
     try {
       setSelectedDriverId(driverId);
@@ -179,8 +216,8 @@ export default function TripRequestForm({
       const tripId = await sendTripOffer(
         driverId,
         currentLocation,
-        destination,
-        proposedFare
+        finalDestination,
+        finalFare
       );
 
       console.log("✅ Solicitud enviada con ID:", tripId);
@@ -192,14 +229,15 @@ export default function TripRequestForm({
         tripId,
         driverId,
         origin: currentLocation,
-        destination,
-        proposedFare,
+        destination: finalDestination,
+        proposedFare: finalFare,
         distance: locationService.calculateDistance(
           currentLocation,
-          destination
+          finalDestination
         ),
         estimatedTime: Math.ceil(
-          locationService.calculateDistance(currentLocation, destination) * 2
+          locationService.calculateDistance(currentLocation, finalDestination) *
+            2
         ), // Estimación simple: 2 min por km
       });
 
@@ -215,27 +253,6 @@ export default function TripRequestForm({
 
   return (
     <div className="space-y-4 lg:space-y-6">
-      {/* Debug Panel */}
-      <div className="bg-slate-100 p-4 rounded-lg text-xs space-y-2">
-        <h4 className="font-semibold">DEBUG INFO</h4>
-        <div>Connected Drivers Count: {connectedDrivers.length}</div>
-        <div>
-          Available Drivers: {connectedDrivers.filter((d) => d.isOnline).length}
-        </div>
-        <div>
-          Connected Drivers:{" "}
-          {JSON.stringify(
-            connectedDrivers.map((d) => ({
-              id: d.id,
-              name: d.name,
-              isOnline: d.isOnline,
-            })),
-            null,
-            2
-          )}
-        </div>
-      </div>
-
       {error && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -285,10 +302,11 @@ export default function TripRequestForm({
             <label className="text-sm font-medium text-dark flex items-center space-x-2">
               <div className="w-3 h-3 bg-error rounded-full"></div>
               <span>Hasta</span>
+              <span className="text-xs text-gray-500">(Opcional)</span>
             </label>
             <div className="relative">
               <Input
-                placeholder="¿A dónde quieres ir?"
+                placeholder="¿A dónde quieres ir? (Opcional)"
                 value={destinationQuery}
                 onChange={(e) => setDestinationQuery(e.target.value)}
                 className="bg-white border-gray-200 focus:border-taxi-yellow"
@@ -358,7 +376,7 @@ export default function TripRequestForm({
           {/* Botón de solicitar */}
           <Button
             onClick={handleRequestTrip}
-            disabled={!currentLocation || !destination || isLoading}
+            disabled={!currentLocation || isLoading}
             className="w-full bg-gradient-to-r from-taxi-yellow to-yellow-400 hover:from-yellow-400 hover:to-taxi-yellow text-dark font-bold py-4 text-lg"
           >
             {isLoading ? (

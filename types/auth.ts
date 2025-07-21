@@ -10,6 +10,7 @@ export interface User {
   updatedAt: Date;
   // Campos específicos para conductores
   driverLicense?: string;
+  driverPhoto?: string;
   vehicleInfo?: {
     make: string;
     model: string;
@@ -37,6 +38,7 @@ export interface RegisterRequest {
   role: "passenger" | "driver";
   // Campos opcionales según el rol
   driverLicense?: string;
+  driverPhoto?: string;
   vehicleInfo?: {
     make: string;
     model: string;

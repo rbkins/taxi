@@ -24,11 +24,30 @@ import {
   Activity,
   Menu,
   X,
+  Edit2,
+  Save,
+  Trash2,
+  User,
+  Camera,
+  PieChart,
+  BarChart3,
+  TrendingDown,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 import TripOfferStatus from "@/components/TripOfferStatus";
 
 interface Trip {
@@ -51,6 +70,7 @@ interface DriverStats {
 
 export default function DriverDashboard() {
   const { user: authUser, logout } = useAuth();
+  const { toast } = useToast();
   const {
     connectDriver,
     disconnectDriver,
@@ -72,11 +92,17 @@ export default function DriverDashboard() {
   const [justUpdated, setJustUpdated] = useState(false); // Para evitar sobreescribir estado recién actualizado
   const [driverTripHistory, setDriverTripHistory] = useState<any[]>([]);
 
+  // Estados para el perfil
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [editedName, setEditedName] = useState("");
+  const [editedEmail, setEditedEmail] = useState("");
+  const [editedPhone, setEditedPhone] = useState("");
+  const [editedLicense, setEditedLicense] = useState("");
+
   // ID consistente del conductor
   const driverId = authUser?.id;
-
-  console.log("DriverDashboard - AuthUser:", authUser);
-  console.log("DriverDashboard - DriverId:", driverId);
 
   // Cerrar menú móvil cuando se cambia a desktop
   useEffect(() => {
@@ -84,6 +110,16 @@ export default function DriverDashboard() {
       setIsMobileMenuOpen(false);
     }
   }, [isMobile]);
+
+  // Actualizar estados cuando cambie authUser
+  useEffect(() => {
+    if (authUser) {
+      setEditedName(authUser.name || "");
+      setEditedEmail(authUser.email || "");
+      setEditedPhone(authUser.phone || "");
+      setEditedLicense(authUser.driverLicense || "");
+    }
+  }, [authUser]);
 
   const [driverStats] = useState<DriverStats>({
     todayEarnings: "$245.50",
@@ -93,33 +129,17 @@ export default function DriverDashboard() {
   });
 
   // Filtrar notificaciones de solicitudes de viaje para este conductor
-  console.log("🔍 Driver ID:", driverId);
-  console.log("🔍 All notifications:", notifications);
-  console.log("🔍 Filtering notifications for driverId:", driverId);
-
   const tripNotifications = notifications.filter((n) => {
-    console.log("🔍 Checking notification:", {
-      id: n.id,
-      recipientId: n.recipientId,
-      type: n.type,
-      read: n.read,
-      matches:
-        n.recipientId === driverId && n.type === "trip-request" && !n.read,
-    });
     return n.recipientId === driverId && n.type === "trip-request" && !n.read;
   });
-
-  console.log("🎯 Filtered trip notifications:", tripNotifications);
 
   // Función para aceptar oferta
   const handleAcceptOffer = async (offerId: string) => {
     try {
       await respondToOffer(offerId, "accept");
-      console.log("✅ Oferta aceptada");
 
       // Simular duración del viaje (30 segundos) y luego ir a trips
       setTimeout(() => {
-        console.log("🏁 Viaje completado - Redirigiendo a historial");
         setActiveTab("trips");
       }, 30000); // 30 segundos
     } catch (error) {
@@ -132,12 +152,177 @@ export default function DriverDashboard() {
   const handleRejectOffer = async (offerId: string) => {
     try {
       await respondToOffer(offerId, "reject");
-      console.log("❌ Oferta rechazada");
     } catch (error) {
       console.error("❌ Error rechazando oferta:", error);
       alert("Error al rechazar la oferta");
     }
   };
+
+  // Funciones para el perfil del conductor
+  const handleEditProfile = () => {
+    setIsEditingProfile(true);
+    setEditedName(authUser?.name || "");
+    setEditedEmail(authUser?.email || "");
+    setEditedPhone(authUser?.phone || "");
+    setEditedLicense(authUser?.driverLicense || "");
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingProfile(false);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!editedName.trim() || !editedEmail.trim() || !editedLicense.trim()) {
+      toast({
+        title: "Error",
+        description: "Por favor completa todos los campos obligatorios",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUpdatingProfile(true);
+    try {
+      const response = await fetch("/api/auth/profile", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({
+          name: editedName.trim(),
+          email: editedEmail.trim(),
+          phone: editedPhone.trim(),
+          driverLicense: editedLicense.trim(),
+        }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Perfil actualizado",
+          description: "Tu información ha sido actualizada correctamente",
+        });
+        setIsEditingProfile(false);
+        // Refrescar la información del usuario
+        window.location.reload();
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Error",
+          description: error.message || "Error al actualizar el perfil",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error de conexión al actualizar el perfil",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
+  const handleDeleteProfile = async () => {
+    setIsUpdatingProfile(true);
+    try {
+      const response = await fetch("/api/auth/profile", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Cuenta eliminada",
+          description: "Tu cuenta de conductor ha sido eliminada",
+        });
+        logout();
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Error",
+          description: error.message || "Error al eliminar la cuenta",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error de conexión al eliminar la cuenta",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingProfile(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  // Calcular estadísticas de ganancias
+  const calculateEarningsStats = () => {
+    if (!driverTripHistory || !Array.isArray(driverTripHistory)) {
+      return {
+        today: { trips: 0, earnings: 0 },
+        week: { trips: 0, earnings: 0 },
+        month: { trips: 0, earnings: 0 },
+        total: { trips: 0, earnings: 0 },
+        avgPerTrip: 0,
+      };
+    }
+
+    const completedTrips = driverTripHistory.filter(
+      (trip) => trip && trip.status === "completed"
+    );
+
+    const today = new Date();
+    const currentWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const todayTrips = completedTrips.filter((trip) => {
+      const tripDate = new Date(trip.createdAt);
+      return tripDate.toDateString() === today.toDateString();
+    });
+
+    const weekTrips = completedTrips.filter((trip) => {
+      const tripDate = new Date(trip.createdAt);
+      return tripDate >= currentWeek;
+    });
+
+    const monthTrips = completedTrips.filter((trip) => {
+      const tripDate = new Date(trip.createdAt);
+      return tripDate >= currentMonth;
+    });
+
+    const todayEarnings = todayTrips.reduce(
+      (sum, trip) => sum + (trip.price || 0),
+      0
+    );
+    const weekEarnings = weekTrips.reduce(
+      (sum, trip) => sum + (trip.price || 0),
+      0
+    );
+    const monthEarnings = monthTrips.reduce(
+      (sum, trip) => sum + (trip.price || 0),
+      0
+    );
+    const totalEarnings = completedTrips.reduce(
+      (sum, trip) => sum + (trip.price || 0),
+      0
+    );
+
+    return {
+      today: { trips: todayTrips.length, earnings: todayEarnings },
+      week: { trips: weekTrips.length, earnings: weekEarnings },
+      month: { trips: monthTrips.length, earnings: monthEarnings },
+      total: { trips: completedTrips.length, earnings: totalEarnings },
+      avgPerTrip:
+        completedTrips.length > 0 ? totalEarnings / completedTrips.length : 0,
+    };
+  };
+
+  const earningsStats = calculateEarningsStats();
 
   const handleLogout = () => {
     logout();
@@ -151,19 +336,13 @@ export default function DriverDashboard() {
       return;
     }
 
-    console.log("Toggle connection - Driver ID:", driverId);
-    console.log("AuthUser:", authUser);
-    console.log("IsOnline:", isOnline);
-
     if (isOnline) {
       // Desconectar
       setIsConnecting(true);
       try {
-        console.log("Attempting to disconnect...");
         await disconnectDriver(driverId);
 
         // Forzar actualización del estado local inmediatamente
-        console.log("✅ Disconnection successful, updating local state");
         setIsOnline(false);
         setCurrentLocation(null);
         setJustUpdated(true); // Marcar que acabamos de actualizar
@@ -175,11 +354,6 @@ export default function DriverDashboard() {
 
         // Limpiar la marca después de un tiempo (aumentamos a 5 segundos)
         setTimeout(() => setJustUpdated(false), 5000);
-
-        console.log("Driver disconnected successfully");
-        console.log(
-          "✅ Estado actualizado: Conductor desconectado exitosamente"
-        );
       } catch (error) {
         console.error("Error disconnecting:", error);
         alert("Error al desconectar: " + error);
@@ -190,18 +364,14 @@ export default function DriverDashboard() {
       // Conectar
       setIsConnecting(true);
       try {
-        console.log("Attempting to connect...");
         // Obtener ubicación actual
         const location = await locationService.getCurrentLocation();
-        console.log("Location obtained:", location);
         setCurrentLocation(location);
 
         // Conectar conductor
-        console.log("Calling connectDriver...");
         const result = await connectDriver(driverId, location);
 
         // Forzar actualización del estado local inmediatamente
-        console.log("✅ Connection successful, updating local state");
         setIsOnline(true);
         setJustUpdated(true); // Marcar que acabamos de actualizar
 
@@ -212,9 +382,6 @@ export default function DriverDashboard() {
 
         // Limpiar la marca después de un tiempo (aumentamos a 5 segundos)
         setTimeout(() => setJustUpdated(false), 5000);
-
-        console.log("Driver connected successfully with ID:", driverId);
-        console.log("✅ Estado actualizado: Conductor conectado exitosamente");
       } catch (error) {
         console.error("Error connecting:", error);
         alert("Error al conectar: " + error);
@@ -229,27 +396,15 @@ export default function DriverDashboard() {
     if (!driverId) return; // No verificar si no hay usuario autenticado
     if (justUpdated) return; // No sobreescribir si acabamos de actualizar
 
-    console.log("🔍 Checking connection status for driver:", driverId);
-    console.log("📊 Connected drivers:", connectedDrivers);
-
     // Buscar el conductor en la lista de conectados
     const connectedDriver = connectedDrivers.find((d) => {
-      console.log("Comparing:", d.id, "with", driverId);
       return d.id === driverId;
     });
 
     const isDriverOnline = connectedDriver?.isOnline || false;
-    console.log("🔌 Driver online status:", isDriverOnline);
-    console.log("🎯 Found connected driver:", connectedDriver);
 
     // Forzar actualización del estado si hay cambio
     if (isOnline !== isDriverOnline) {
-      console.log(
-        "🔄 Updating online status from",
-        isOnline,
-        "to",
-        isDriverOnline
-      );
       setIsOnline(isDriverOnline);
     }
   }, [connectedDrivers, driverId, isOnline, justUpdated]);
@@ -304,10 +459,8 @@ export default function DriverDashboard() {
     const loadDriverTripHistory = async () => {
       if (activeTab === "trips" && authUser?.id) {
         try {
-          console.log("📋 Loading driver trip history...");
           const history = await getTripHistory();
           setDriverTripHistory(history);
-          console.log("✅ Driver trip history loaded:", history);
         } catch (error) {
           console.error("❌ Error loading driver trip history:", error);
         }
@@ -327,39 +480,6 @@ export default function DriverDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-light-gray to-gray-100 flex">
-      {/* Driver Status Debug Panel */}
-      <div className="fixed top-0 right-0 z-50 bg-white shadow-lg p-4 text-xs max-w-xs border-l border-gray-300">
-        <h4 className="font-semibold mb-2 text-blue-600">DRIVER DEBUG</h4>
-        <div className="space-y-1">
-          <div>Driver ID: {driverId || "N/A"}</div>
-          <div
-            className={`${
-              isOnline ? "text-green-600 font-bold" : "text-red-600"
-            }`}
-          >
-            IsOnline State: {isOnline ? "✅ CONECTADO" : "❌ DESCONECTADO"}
-          </div>
-          <div
-            className={`${
-              justUpdated ? "text-orange-600 font-bold" : "text-gray-500"
-            }`}
-          >
-            Just Updated: {justUpdated ? "🔒 PROTEGIDO" : "🔓 Normal"}
-          </div>
-          <div>Button Text: {isOnline ? "Desconectar" : "Conectar"}</div>
-          <div>Current Time: {new Date().toLocaleTimeString()}</div>
-          <div>
-            Location:{" "}
-            {currentLocation
-              ? `${currentLocation.lat.toFixed(
-                  4
-                )}, ${currentLocation.lng.toFixed(4)}`
-              : "N/A"}
-          </div>
-          <div>Connected Drivers Count: {connectedDrivers.length}</div>
-        </div>
-      </div>
-
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
         <div
@@ -684,13 +804,19 @@ export default function DriverDashboard() {
                           <div>
                             <p className="text-sm text-gray-500">Origen</p>
                             <p className="font-medium text-dark">
-                              {currentTrip.origin}
+                              {typeof currentTrip.origin === "string"
+                                ? currentTrip.origin
+                                : currentTrip.origin?.address ||
+                                  "No especificado"}
                             </p>
                           </div>
                           <div>
                             <p className="text-sm text-gray-500">Destino</p>
                             <p className="font-medium text-dark">
-                              {currentTrip.destination}
+                              {typeof currentTrip.destination === "string"
+                                ? currentTrip.destination
+                                : currentTrip.destination?.address ||
+                                  "No especificado"}
                             </p>
                           </div>
                         </div>
@@ -902,15 +1028,7 @@ export default function DriverDashboard() {
                         )}
                       </div>
 
-                      <div className="flex justify-between items-center mt-4">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-taxi-yellow"
-                        >
-                          Ver detalles
-                          <Navigation className="w-4 h-4 ml-1" />
-                        </Button>
+                      <div className="flex justify-end items-center mt-4">
                         <Badge variant="outline" className="text-xs">
                           ID: {trip.id?.slice(-6) || "N/A"}
                         </Badge>
@@ -925,16 +1043,217 @@ export default function DriverDashboard() {
           {/* Earnings Tab */}
           {activeTab === "earnings" && (
             <div className="space-y-4 lg:space-y-6">
+              {/* Resumen de ganancias por período */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0">
+                  <CardContent className="p-4 text-center">
+                    <Wallet className="w-6 h-6 mx-auto mb-2" />
+                    <p className="text-2xl font-bold">
+                      ${earningsStats.today.earnings.toFixed(2)}
+                    </p>
+                    <p className="text-sm opacity-90">Hoy</p>
+                    <p className="text-xs opacity-75">
+                      {earningsStats.today.trips} viajes
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0">
+                  <CardContent className="p-4 text-center">
+                    <Calendar className="w-6 h-6 mx-auto mb-2" />
+                    <p className="text-2xl font-bold">
+                      ${earningsStats.week.earnings.toFixed(2)}
+                    </p>
+                    <p className="text-sm opacity-90">Esta semana</p>
+                    <p className="text-xs opacity-75">
+                      {earningsStats.week.trips} viajes
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0">
+                  <CardContent className="p-4 text-center">
+                    <TrendingUp className="w-6 h-6 mx-auto mb-2" />
+                    <p className="text-2xl font-bold">
+                      ${earningsStats.month.earnings.toFixed(2)}
+                    </p>
+                    <p className="text-sm opacity-90">Este mes</p>
+                    <p className="text-xs opacity-75">
+                      {earningsStats.month.trips} viajes
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0">
+                  <CardContent className="p-4 text-center">
+                    <Award className="w-6 h-6 mx-auto mb-2" />
+                    <p className="text-2xl font-bold">
+                      ${earningsStats.total.earnings.toFixed(2)}
+                    </p>
+                    <p className="text-sm opacity-90">Total</p>
+                    <p className="text-xs opacity-75">
+                      {earningsStats.total.trips} viajes
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Estadísticas detalladas */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card className="bg-white shadow-lg border-0">
+                  <CardHeader>
+                    <CardTitle className="flex items-center text-dark">
+                      <BarChart3 className="w-5 h-5 mr-2 text-taxi-yellow" />
+                      Estadísticas de rendimiento
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="font-medium text-dark">
+                        Promedio por viaje
+                      </span>
+                      <span className="text-lg font-bold text-green-600">
+                        ${earningsStats.avgPerTrip.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="font-medium text-dark">
+                        Viajes completados
+                      </span>
+                      <span className="text-lg font-bold text-blue-600">
+                        {earningsStats.total.trips}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="font-medium text-dark">
+                        Calificación promedio
+                      </span>
+                      <div className="flex items-center">
+                        <Star className="w-4 h-4 text-yellow-500 fill-current mr-1" />
+                        <span className="text-lg font-bold text-yellow-600">
+                          4.8
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white shadow-lg border-0">
+                  <CardHeader>
+                    <CardTitle className="flex items-center text-dark">
+                      <PieChart className="w-5 h-5 mr-2 text-taxi-yellow" />
+                      Resumen del mes
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Días trabajados</span>
+                        <span className="font-medium">
+                          {Math.min(earningsStats.month.trips, 30)} días
+                        </span>
+                      </div>
+                      <Progress
+                        value={(earningsStats.month.trips / 30) * 100}
+                        className="h-2"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Meta mensual</span>
+                        <span className="font-medium">
+                          $
+                          {Math.min(earningsStats.month.earnings, 2000).toFixed(
+                            0
+                          )}{" "}
+                          / $2,000
+                        </span>
+                      </div>
+                      <Progress
+                        value={(earningsStats.month.earnings / 2000) * 100}
+                        className="h-2"
+                      />
+                    </div>
+                    <div className="bg-gradient-to-r from-taxi-yellow/20 to-yellow-200/20 p-3 rounded-lg">
+                      <p className="text-sm font-medium text-dark">
+                        {earningsStats.month.earnings >= 2000
+                          ? "¡Felicidades! Has alcanzado tu meta mensual"
+                          : `Te faltan $${(
+                              2000 - earningsStats.month.earnings
+                            ).toFixed(2)} para tu meta`}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Historial de ganancias recientes */}
               <Card className="bg-white shadow-lg border-0">
                 <CardHeader>
-                  <CardTitle className="text-dark">
-                    Resumen de Ganancias
+                  <CardTitle className="flex items-center text-dark">
+                    <Clock className="w-5 h-5 mr-2 text-taxi-yellow" />
+                    Ganancias recientes
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-gray-600">
-                    Próximamente: Estadísticas detalladas de ingresos
-                  </p>
+                  {driverTripHistory.filter(
+                    (trip) => trip.status === "completed"
+                  ).length === 0 ? (
+                    <div className="text-center py-8">
+                      <DollarSign className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                      <p className="text-gray-600">
+                        No tienes ganancias registradas aún
+                      </p>
+                      <p className="text-sm text-gray-500 mt-2">
+                        Completa viajes para ver tus ganancias aquí
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {driverTripHistory
+                        .filter((trip) => trip.status === "completed")
+                        .slice(0, 5)
+                        .map((trip, index) => (
+                          <div
+                            key={trip.id || index}
+                            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                          >
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                                <CheckCircle className="w-5 h-5 text-green-600" />
+                              </div>
+                              <div>
+                                <p className="font-medium text-dark">
+                                  {typeof trip.destination === "string"
+                                    ? trip.destination
+                                    : trip.destination?.address ||
+                                      "Destino no especificado"}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                  {new Date(trip.createdAt).toLocaleDateString(
+                                    "es-ES",
+                                    {
+                                      day: "numeric",
+                                      month: "short",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    }
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-lg font-bold text-green-600">
+                                +${(trip.price || trip.fare || 0).toFixed(2)}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {trip.distance} km
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -943,20 +1262,235 @@ export default function DriverDashboard() {
           {/* Profile Tab */}
           {activeTab === "profile" && (
             <div className="space-y-4 lg:space-y-6">
+              {/* Información del conductor */}
               <Card className="bg-white shadow-lg border-0">
                 <CardHeader>
-                  <CardTitle className="text-dark">
-                    Perfil del Conductor
+                  <CardTitle className="flex items-center text-dark">
+                    <User className="w-5 h-5 mr-2 text-taxi-yellow" />
+                    Información Personal
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-gray-600">
-                    Próximamente: Configuración del perfil
-                  </p>
+                <CardContent className="space-y-6">
+                  {/* Foto del conductor */}
+                  <div className="text-center space-y-4">
+                    <div className="w-24 h-24 mx-auto bg-gradient-to-r from-taxi-yellow to-yellow-400 rounded-full flex items-center justify-center">
+                      {authUser?.driverPhoto ? (
+                        <img
+                          src={authUser.driverPhoto}
+                          alt="Foto del conductor"
+                          className="w-full h-full rounded-full object-cover"
+                        />
+                      ) : (
+                        <User className="w-12 h-12 text-dark" />
+                      )}
+                    </div>
+                    {!isEditingProfile && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-taxi-yellow border-taxi-yellow hover:bg-taxi-yellow hover:text-dark"
+                      >
+                        <Camera className="w-4 h-4 mr-2" />
+                        Cambiar foto
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Información del perfil */}
+                  {isEditingProfile ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">
+                            Nombre completo
+                          </label>
+                          <Input
+                            type="text"
+                            value={editedName}
+                            onChange={(e) => setEditedName(e.target.value)}
+                            className="mt-1"
+                            placeholder="Tu nombre completo"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">
+                            Email
+                          </label>
+                          <Input
+                            type="email"
+                            value={editedEmail}
+                            onChange={(e) => setEditedEmail(e.target.value)}
+                            className="mt-1"
+                            placeholder="tu@email.com"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">
+                            Teléfono
+                          </label>
+                          <Input
+                            type="tel"
+                            value={editedPhone}
+                            onChange={(e) => setEditedPhone(e.target.value)}
+                            className="mt-1"
+                            placeholder="+504 9999-9999"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">
+                            Licencia de conducir
+                          </label>
+                          <Input
+                            type="text"
+                            value={editedLicense}
+                            onChange={(e) => setEditedLicense(e.target.value)}
+                            className="mt-1"
+                            placeholder="Número de licencia"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-600">Nombre</p>
+                          <p className="font-bold text-dark">
+                            {authUser?.name || "No especificado"}
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-600">Email</p>
+                          <p className="font-bold text-dark">
+                            {authUser?.email || "No especificado"}
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-600">Teléfono</p>
+                          <p className="font-bold text-dark">
+                            {authUser?.phone || "No especificado"}
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-600">
+                            Licencia de conducir
+                          </p>
+                          <p className="font-bold text-dark">
+                            {authUser?.driverLicense || "No especificada"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-r from-taxi-yellow/20 to-yellow-200/20 p-4 rounded-lg text-center">
+                        <p className="text-sm text-gray-600">Estado</p>
+                        <Badge
+                          className={`${
+                            isOnline
+                              ? "bg-green-100 text-green-800"
+                              : "bg-gray-100 text-gray-800"
+                          } text-lg px-4 py-2`}
+                        >
+                          {isOnline ? "En línea" : "Desconectado"}
+                        </Badge>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Botones de acción */}
+                  <div className="space-y-3 pt-4 border-t">
+                    {isEditingProfile ? (
+                      <div className="flex space-x-3">
+                        <Button
+                          onClick={handleSaveProfile}
+                          disabled={isUpdatingProfile}
+                          className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold py-3"
+                        >
+                          {isUpdatingProfile ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                              Guardando...
+                            </>
+                          ) : (
+                            <>
+                              <Save className="w-4 h-4 mr-2" />
+                              Guardar cambios
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          onClick={handleCancelEdit}
+                          variant="outline"
+                          className="flex-1 py-3"
+                        >
+                          Cancelar
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <Button
+                          onClick={handleEditProfile}
+                          className="w-full bg-gradient-to-r from-taxi-yellow to-yellow-400 text-dark font-semibold py-3"
+                        >
+                          <Edit2 className="w-4 h-4 mr-2" />
+                          Editar información
+                        </Button>
+                        <Button
+                          onClick={() => setShowDeleteConfirm(true)}
+                          variant="outline"
+                          className="w-full border-red-200 text-red-600 hover:bg-red-50 py-3"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Eliminar Cuenta de Conductor
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </div>
           )}
+
+          {/* Dialog de confirmación para eliminar cuenta */}
+          <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle className="flex items-center text-red-600">
+                  <AlertCircle className="w-5 h-5 mr-2" />
+                  Eliminar Cuenta de Conductor
+                </DialogTitle>
+                <DialogDescription>
+                  Esta acción no se puede deshacer. Se eliminará permanentemente
+                  tu cuenta de conductor, el historial de viajes y todos los
+                  datos asociados.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="flex space-x-3">
+                <Button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleDeleteProfile}
+                  disabled={isUpdatingProfile}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {isUpdatingProfile ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Eliminando...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Eliminar definitivamente
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </main>
     </div>
