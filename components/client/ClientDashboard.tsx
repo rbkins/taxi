@@ -554,16 +554,12 @@ export default function ClientDashboard() {
 
           {/* Quick Stats */}
           <div className="p-3 lg:p-4 bg-white/5 rounded-xl backdrop-blur-sm border border-white/10 mb-4">
-            <div className="grid grid-cols-2 gap-3 text-center">
-              <div>
+            <div className="flex justify-center">
+              <div className="text-center">
                 <p className="text-2xl font-bold text-taxi-yellow">
                   {realTripHistory.length}
                 </p>
                 <p className="text-xs text-gray-400">Viajes</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-taxi-yellow">4.9</p>
-                <p className="text-xs text-gray-400">Rating</p>
               </div>
             </div>
           </div>
@@ -572,7 +568,7 @@ export default function ClientDashboard() {
           <Button
             onClick={handleLogout}
             variant="outline"
-            className="w-full border-white/20 text-white hover:bg-white/10 transition-all duration-300 text-sm lg:text-base"
+            className="w-full bg-white  text-black   text-sm lg:text-base"
           >
             Cerrar Sesión
           </Button>
@@ -808,65 +804,97 @@ export default function ClientDashboard() {
                 realTripHistory.map((trip) => (
                   <Card
                     key={trip.id || trip.tripId}
-                    className="bg-white shadow-lg border-0"
+                    className="bg-white shadow-lg border-0 hover:shadow-xl transition-shadow duration-200"
                   >
-                    <CardContent className="p-4 lg:p-6">
-                      <div className="flex justify-between items-start mb-4">
+                    <CardContent className="p-4 lg:p-5">
+                      {/* Header con información principal */}
+                      <div className="flex justify-between items-center mb-3">
                         <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-gradient-to-r from-taxi-yellow to-yellow-400 rounded-full flex items-center justify-center">
-                            <MapPin className="w-5 h-5 text-dark" />
+                          <div className="w-8 h-8 bg-gradient-to-r from-taxi-yellow to-yellow-400 rounded-full flex items-center justify-center">
+                            <Car className="w-4 h-4 text-dark" />
                           </div>
                           <div>
-                            <Badge className="bg-success text-white mb-1">
+                            <Badge className="bg-success text-white text-xs px-2 py-1">
                               Completado
                             </Badge>
-                            <p className="text-sm text-gray-500">
-                              {new Date(trip.createdAt).toLocaleDateString(
-                                "es-ES"
-                              )}
-                            </p>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-xl font-bold text-dark">
+                          <p className="text-lg font-bold text-green-600">
                             ${trip.fare?.toFixed(2) || "0.00"}
                           </p>
-                          <div className="flex items-center justify-end space-x-1 mt-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className="w-3 h-3 text-taxi-yellow fill-current"
-                              />
-                            ))}
-                          </div>
+                          <p className="text-xs text-gray-500">
+                            {new Date(trip.createdAt).toLocaleDateString(
+                              "es-ES"
+                            )}
+                          </p>
                         </div>
                       </div>
 
-                      <div className="space-y-3">
-                        <div>
-                          <p className="text-sm text-gray-500">Origen</p>
-                          <p className="font-medium text-dark">
+                      {/* Información del viaje en formato compacto */}
+                      <div className="space-y-2">
+                        {/* Ruta del viaje */}
+                        <div className="bg-gray-50 p-3 rounded-lg">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                            <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                              Origen
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium text-dark mb-2 line-clamp-1">
                             {typeof trip.origin === "string"
                               ? trip.origin
                               : trip.origin?.address || "No especificado"}
                           </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500">Destino</p>
-                          <p className="font-medium text-dark">
+
+                          <div className="flex items-center space-x-2 mb-2">
+                            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                            <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                              Destino
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium text-dark line-clamp-1">
                             {typeof trip.destination === "string"
                               ? trip.destination
                               : trip.destination?.address || "No especificado"}
                           </p>
                         </div>
-                        {trip.driverName && (
-                          <div>
-                            <p className="text-sm text-gray-500">Conductor</p>
-                            <p className="font-medium text-dark">
-                              {trip.driverName}
-                            </p>
-                          </div>
-                        )}
+
+                        {/* Información adicional en grid compacto */}
+                        <div className="grid grid-cols-2 gap-3">
+                          {trip.driverName && (
+                            <div className="bg-blue-50 p-2 rounded">
+                              <p className="text-xs text-blue-600 font-medium">
+                                Conductor
+                              </p>
+                              <p className="text-sm font-medium text-dark truncate">
+                                {trip.driverName}
+                              </p>
+                            </div>
+                          )}
+
+                          {trip.distance && (
+                            <div className="bg-purple-50 p-2 rounded">
+                              <p className="text-xs text-purple-600 font-medium">
+                                Distancia
+                              </p>
+                              <p className="text-sm font-medium text-dark">
+                                {trip.distance} km
+                              </p>
+                            </div>
+                          )}
+
+                          {trip.estimatedTime && (
+                            <div className="bg-orange-50 p-2 rounded">
+                              <p className="text-xs text-orange-600 font-medium">
+                                Tiempo
+                              </p>
+                              <p className="text-sm font-medium text-dark">
+                                {trip.estimatedTime} min
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -929,14 +957,14 @@ export default function ClientDashboard() {
                   </div>
 
                   {/* Estadísticas */}
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-3 gap-4 justify-center">
                     {[
                       {
                         label: "Viajes",
                         value: realTripHistory.length.toString(),
                         icon: Car,
                       },
-                      { label: "Puntos", value: "1,247", icon: Star },
+
                       { label: "Ahorrado", value: "$156", icon: TrendingUp },
                     ].map((stat, index) => (
                       <Card

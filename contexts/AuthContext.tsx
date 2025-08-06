@@ -69,14 +69,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Verificar si hay token guardado al cargar la aplicación
-    const savedToken = localStorage.getItem("token");
-    const savedUser = localStorage.getItem("user");
+    const initializeAuth = async () => {
+      try {
+        const savedToken = localStorage.getItem("token");
+        const savedUser = localStorage.getItem("user");
 
-    if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
+        if (savedToken && savedUser) {
+          // Verificar si el token aún es válido haciendo una petición de prueba
+          const response = await fetch("/api/auth/profile", {
+            headers: {
+              Authorization: `Bearer ${savedToken}`,
+            },
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+              setUser(data.user);
+              setToken(savedToken);
+            }
+          } else if (response.status === 401) {
+            // Token expirado o inválido, limpiar localStorage
+            console.log("🔄 Token expirado, limpiando sesión...");
+            localStorage.removeItem("token");
+            localStorage.removeItem("refreshToken");
+            localStorage.removeItem("user");
+            setUser(null);
+            setToken(null);
+          }
+        }
+      } catch (error) {
+        console.error("Error initializing auth:", error);
+        // En caso de error, limpiar localStorage por seguridad
+        localStorage.removeItem("token");
+        localStorage.removeItem("refreshToken");
+        localStorage.removeItem("user");
+        setUser(null);
+        setToken(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializeAuth();
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -147,6 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("token");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
+    console.log("🔓 Sesión cerrada y localStorage limpio");
   };
 
   const refreshUser = async () => {

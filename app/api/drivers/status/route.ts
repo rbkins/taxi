@@ -78,8 +78,13 @@ export async function GET(request: NextRequest) {
 // POST - Conectar/Desconectar conductor
 export async function POST(request: NextRequest) {
   try {
+    console.log("🔐 Processing driver status request...");
+
     const authHeader = request.headers.get("authorization");
+    console.log("🎫 Auth header exists:", !!authHeader);
+
     if (!authHeader) {
+      console.log("❌ No authorization header provided");
       return NextResponse.json(
         { success: false, message: "Token requerido" },
         { status: 401 }
@@ -87,14 +92,21 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.replace("Bearer ", "");
+    console.log("🎫 Token extracted, length:", token.length);
+    console.log("🎫 Token preview:", token.substring(0, 20) + "...");
+
     const decoded = verifyToken(token);
+    console.log("🔓 Token verification result:", !!decoded);
 
     if (!decoded) {
+      console.log("❌ Token verification failed");
       return NextResponse.json(
         { success: false, message: "Token inválido" },
         { status: 401 }
       );
     }
+
+    console.log("✅ Token verified for user:", decoded.userId);
 
     const { action, location } = await request.json();
 

@@ -69,7 +69,7 @@ interface DriverStats {
 }
 
 export default function DriverDashboard() {
-  const { user: authUser, logout } = useAuth();
+  const { user: authUser, logout, refreshUser } = useAuth();
   const { toast } = useToast();
   const {
     connectDriver,
@@ -99,7 +99,6 @@ export default function DriverDashboard() {
   const [editedName, setEditedName] = useState("");
   const [editedEmail, setEditedEmail] = useState("");
   const [editedPhone, setEditedPhone] = useState("");
-  const [editedLicense, setEditedLicense] = useState("");
 
   // ID consistente del conductor
   const driverId = authUser?.id;
@@ -117,7 +116,6 @@ export default function DriverDashboard() {
       setEditedName(authUser.name || "");
       setEditedEmail(authUser.email || "");
       setEditedPhone(authUser.phone || "");
-      setEditedLicense(authUser.driverLicense || "");
     }
   }, [authUser]);
 
@@ -164,7 +162,6 @@ export default function DriverDashboard() {
     setEditedName(authUser?.name || "");
     setEditedEmail(authUser?.email || "");
     setEditedPhone(authUser?.phone || "");
-    setEditedLicense(authUser?.driverLicense || "");
   };
 
   const handleCancelEdit = () => {
@@ -172,7 +169,7 @@ export default function DriverDashboard() {
   };
 
   const handleSaveProfile = async () => {
-    if (!editedName.trim() || !editedEmail.trim() || !editedLicense.trim()) {
+    if (!editedName.trim() || !editedEmail.trim()) {
       toast({
         title: "Error",
         description: "Por favor completa todos los campos obligatorios",
@@ -193,27 +190,32 @@ export default function DriverDashboard() {
           name: editedName.trim(),
           email: editedEmail.trim(),
           phone: editedPhone.trim(),
-          driverLicense: editedLicense.trim(),
         }),
       });
 
-      if (response.ok) {
+      const data = await response.json();
+
+      if (response.ok && data.success) {
         toast({
           title: "Perfil actualizado",
           description: "Tu información ha sido actualizada correctamente",
         });
         setIsEditingProfile(false);
-        // Refrescar la información del usuario
-        window.location.reload();
+
+        // Actualizar el contexto de autenticación con los nuevos datos
+        await refreshUser();
+
+        console.log("✅ Perfil actualizado exitosamente");
       } else {
-        const error = await response.json();
         toast({
           title: "Error",
-          description: error.message || "Error al actualizar el perfil",
+          description: data.message || "Error al actualizar el perfil",
           variant: "destructive",
         });
+        console.error("❌ Error del servidor:", data.message);
       }
     } catch (error) {
+      console.error("❌ Error de conexión:", error);
       toast({
         title: "Error",
         description: "Error de conexión al actualizar el perfil",
@@ -269,6 +271,9 @@ export default function DriverDashboard() {
         month: { trips: 0, earnings: 0 },
         total: { trips: 0, earnings: 0 },
         avgPerTrip: 0,
+        bestDay: { date: null, earnings: 0 },
+        totalHours: 0,
+        avgEarningsPerHour: 0,
       };
     }
 
@@ -295,22 +300,52 @@ export default function DriverDashboard() {
       return tripDate >= currentMonth;
     });
 
+    // Función helper para obtener las ganancias de un viaje
+    const getTripEarnings = (trip: any) => trip.fare || trip.price || 0;
+
     const todayEarnings = todayTrips.reduce(
-      (sum, trip) => sum + (trip.price || 0),
+      (sum, trip) => sum + getTripEarnings(trip),
       0
     );
     const weekEarnings = weekTrips.reduce(
-      (sum, trip) => sum + (trip.price || 0),
+      (sum, trip) => sum + getTripEarnings(trip),
       0
     );
     const monthEarnings = monthTrips.reduce(
-      (sum, trip) => sum + (trip.price || 0),
+      (sum, trip) => sum + getTripEarnings(trip),
       0
     );
     const totalEarnings = completedTrips.reduce(
-      (sum, trip) => sum + (trip.price || 0),
+      (sum, trip) => sum + getTripEarnings(trip),
       0
     );
+
+    // Calcular mejor día
+    const dailyEarnings = completedTrips.reduce((acc: any, trip) => {
+      const date = new Date(trip.createdAt).toDateString();
+      if (!acc[date]) {
+        acc[date] = 0;
+      }
+      acc[date] += getTripEarnings(trip);
+      return acc;
+    }, {});
+
+    const bestDay = Object.entries(dailyEarnings).reduce(
+      (best: any, [date, earnings]: [string, any]) => {
+        if (earnings > best.earnings) {
+          return { date, earnings };
+        }
+        return best;
+      },
+      { date: null, earnings: 0 }
+    );
+
+    // Calcular tiempo total estimado (basado en estimatedTime de los viajes)
+    const totalMinutes = completedTrips.reduce(
+      (sum, trip) => sum + (trip.estimatedTime || 30), // 30 min por defecto si no hay tiempo
+      0
+    );
+    const totalHours = totalMinutes / 60;
 
     return {
       today: { trips: todayTrips.length, earnings: todayEarnings },
@@ -319,6 +354,9 @@ export default function DriverDashboard() {
       total: { trips: completedTrips.length, earnings: totalEarnings },
       avgPerTrip:
         completedTrips.length > 0 ? totalEarnings / completedTrips.length : 0,
+      bestDay,
+      totalHours,
+      avgEarningsPerHour: totalHours > 0 ? totalEarnings / totalHours : 0,
     };
   };
 
@@ -586,7 +624,7 @@ export default function DriverDashboard() {
             <Button
               onClick={handleLogout}
               variant="outline"
-              className="w-full border-white/20 text-white hover:bg-white/10 transition-all duration-300 text-sm lg:text-base"
+              className="w-full border-white/20 text-black bg-red-800  transition-all duration-300 text-sm lg:text-base"
             >
               Cerrar Sesión
             </Button>
@@ -716,13 +754,7 @@ export default function DriverDashboard() {
                     color: "from-blue-500 to-cyan-500",
                     change: "+8%",
                   },
-                  {
-                    title: "Calificación",
-                    value: driverStats.rating.toString(),
-                    icon: Star,
-                    color: "from-yellow-500 to-orange-500",
-                    change: "+0.2",
-                  },
+
                   {
                     title: "Tasa Completación",
                     value: `${driverStats.completionRate}%`,
@@ -951,87 +983,106 @@ export default function DriverDashboard() {
                 driverTripHistory.map((trip) => (
                   <Card
                     key={trip.id || trip.tripId}
-                    className="bg-white shadow-lg border-0"
+                    className="bg-white shadow-lg border-0 hover:shadow-xl transition-shadow duration-200"
                   >
-                    <CardContent className="p-4 lg:p-6">
-                      <div className="flex justify-between items-start mb-4">
+                    <CardContent className="p-4 lg:p-5">
+                      {/* Header con información principal */}
+                      <div className="flex justify-between items-center mb-3">
                         <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-gradient-to-r from-taxi-yellow to-yellow-400 rounded-full flex items-center justify-center">
-                            <Car className="w-5 h-5 text-dark" />
+                          <div className="w-8 h-8 bg-gradient-to-r from-taxi-yellow to-yellow-400 rounded-full flex items-center justify-center">
+                            <Car className="w-4 h-4 text-dark" />
                           </div>
                           <div>
-                            <Badge className="bg-success text-white mb-1">
+                            <Badge className="bg-success text-white text-xs px-2 py-1">
                               Completado
                             </Badge>
-                            <p className="text-sm text-gray-500">
-                              {new Date(trip.createdAt).toLocaleDateString(
-                                "es-ES"
-                              )}
-                            </p>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-xl font-bold text-dark">
+                          <p className="text-lg font-bold text-green-600">
                             ${trip.fare?.toFixed(2) || "0.00"}
                           </p>
-                          <div className="flex items-center justify-end space-x-1 mt-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className="w-3 h-3 text-taxi-yellow fill-current"
-                              />
-                            ))}
-                          </div>
+                          <p className="text-xs text-gray-500">
+                            {new Date(trip.createdAt).toLocaleDateString(
+                              "es-ES"
+                            )}
+                          </p>
                         </div>
                       </div>
 
-                      <div className="space-y-3">
-                        <div>
-                          <p className="text-sm text-gray-500">Origen</p>
-                          <p className="font-medium text-dark">
+                      {/* Información del viaje en formato compacto */}
+                      <div className="space-y-2">
+                        {/* Ruta del viaje */}
+                        <div className="bg-gray-50 p-3 rounded-lg">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                            <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                              Origen
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium text-dark mb-2 line-clamp-1">
                             {typeof trip.origin === "string"
                               ? trip.origin
                               : trip.origin?.address || "No especificado"}
                           </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500">Destino</p>
-                          <p className="font-medium text-dark">
+
+                          <div className="flex items-center space-x-2 mb-2">
+                            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                            <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                              Destino
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium text-dark line-clamp-1">
                             {typeof trip.destination === "string"
                               ? trip.destination
                               : trip.destination?.address || "No especificado"}
                           </p>
                         </div>
-                        {trip.passengerName && (
-                          <div>
-                            <p className="text-sm text-gray-500">Pasajero</p>
-                            <p className="font-medium text-dark">
-                              {trip.passengerName}
+
+                        {/* Información adicional en grid compacto */}
+                        <div className="grid grid-cols-2 gap-3">
+                          {trip.passengerName && (
+                            <div className="bg-blue-50 p-2 rounded">
+                              <p className="text-xs text-blue-600 font-medium">
+                                Pasajero
+                              </p>
+                              <p className="text-sm font-medium text-dark truncate">
+                                {trip.passengerName}
+                              </p>
+                            </div>
+                          )}
+
+                          {trip.distance && (
+                            <div className="bg-purple-50 p-2 rounded">
+                              <p className="text-xs text-purple-600 font-medium">
+                                Distancia
+                              </p>
+                              <p className="text-sm font-medium text-dark">
+                                {trip.distance} km
+                              </p>
+                            </div>
+                          )}
+
+                          {trip.estimatedTime && (
+                            <div className="bg-orange-50 p-2 rounded">
+                              <p className="text-xs text-orange-600 font-medium">
+                                Tiempo
+                              </p>
+                              <p className="text-sm font-medium text-dark">
+                                {trip.estimatedTime} min
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="bg-gray-50 p-2 rounded">
+                            <p className="text-xs text-gray-600 font-medium">
+                              ID Viaje
+                            </p>
+                            <p className="text-sm font-medium text-dark">
+                              #{trip.id?.slice(-6) || "N/A"}
                             </p>
                           </div>
-                        )}
-                        {trip.distance && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Distancia:</span>
-                            <span className="font-medium">
-                              {trip.distance} km
-                            </span>
-                          </div>
-                        )}
-                        {trip.estimatedTime && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Tiempo:</span>
-                            <span className="font-medium">
-                              {trip.estimatedTime} min
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex justify-end items-center mt-4">
-                        <Badge variant="outline" className="text-xs">
-                          ID: {trip.id?.slice(-6) || "N/A"}
-                        </Badge>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -1125,15 +1176,27 @@ export default function DriverDashboard() {
                       </span>
                     </div>
                     <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <span className="font-medium text-dark">
-                        Calificación promedio
-                      </span>
-                      <div className="flex items-center">
-                        <Star className="w-4 h-4 text-yellow-500 fill-current mr-1" />
-                        <span className="text-lg font-bold text-yellow-600">
-                          4.8
+                      <span className="font-medium text-dark">Mejor día</span>
+                      <div className="text-right">
+                        <span className="text-lg font-bold text-green-600">
+                          ${earningsStats.bestDay.earnings.toFixed(2)}
                         </span>
+                        {earningsStats.bestDay.date && (
+                          <p className="text-xs text-gray-500">
+                            {new Date(
+                              earningsStats.bestDay.date
+                            ).toLocaleDateString("es-ES")}
+                          </p>
+                        )}
                       </div>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="font-medium text-dark">
+                        Horas trabajadas
+                      </span>
+                      <span className="text-lg font-bold text-blue-600">
+                        {earningsStats.totalHours.toFixed(1)}h
+                      </span>
                     </div>
                   </CardContent>
                 </Card>
@@ -1141,46 +1204,42 @@ export default function DriverDashboard() {
                 <Card className="bg-white shadow-lg border-0">
                   <CardHeader>
                     <CardTitle className="flex items-center text-dark">
-                      <PieChart className="w-5 h-5 mr-2 text-taxi-yellow" />
-                      Resumen del mes
+                      <Activity className="w-5 h-5 mr-2 text-taxi-yellow" />
+                      Resumen de actividad
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Días trabajados</span>
-                        <span className="font-medium">
-                          {Math.min(earningsStats.month.trips, 30)} días
-                        </span>
-                      </div>
-                      <Progress
-                        value={(earningsStats.month.trips / 30) * 100}
-                        className="h-2"
-                      />
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="font-medium text-dark">
+                        Ganancia por hora
+                      </span>
+                      <span className="text-lg font-bold text-green-600">
+                        ${earningsStats.avgEarningsPerHour.toFixed(2)}/h
+                      </span>
                     </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Meta mensual</span>
-                        <span className="font-medium">
-                          $
-                          {Math.min(earningsStats.month.earnings, 2000).toFixed(
-                            0
-                          )}{" "}
-                          / $2,000
-                        </span>
-                      </div>
-                      <Progress
-                        value={(earningsStats.month.earnings / 2000) * 100}
-                        className="h-2"
-                      />
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="font-medium text-dark">
+                        Viajes esta semana
+                      </span>
+                      <span className="text-lg font-bold text-blue-600">
+                        {earningsStats.week.trips}
+                      </span>
                     </div>
-                    <div className="bg-gradient-to-r from-taxi-yellow/20 to-yellow-200/20 p-3 rounded-lg">
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="font-medium text-dark">Viajes hoy</span>
+                      <span className="text-lg font-bold text-blue-600">
+                        {earningsStats.today.trips}
+                      </span>
+                    </div>
+                    <div className="bg-gradient-to-r from-blue-50 to-taxi-yellow/10 p-3 rounded-lg">
                       <p className="text-sm font-medium text-dark">
-                        {earningsStats.month.earnings >= 2000
-                          ? "¡Felicidades! Has alcanzado tu meta mensual"
-                          : `Te faltan $${(
-                              2000 - earningsStats.month.earnings
-                            ).toFixed(2)} para tu meta`}
+                        {earningsStats.today.trips > 0
+                          ? `¡Excelente! Has completado ${
+                              earningsStats.today.trips
+                            } viaje${
+                              earningsStats.today.trips > 1 ? "s" : ""
+                            } hoy`
+                          : "¡Comienza tu día completando un viaje!"}
                       </p>
                     </div>
                   </CardContent>
@@ -1284,16 +1343,6 @@ export default function DriverDashboard() {
                         <User className="w-12 h-12 text-dark" />
                       )}
                     </div>
-                    {!isEditingProfile && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-taxi-yellow border-taxi-yellow hover:bg-taxi-yellow hover:text-dark"
-                      >
-                        <Camera className="w-4 h-4 mr-2" />
-                        Cambiar foto
-                      </Button>
-                    )}
                   </div>
 
                   {/* Información del perfil */}
@@ -1336,18 +1385,6 @@ export default function DriverDashboard() {
                             placeholder="+504 9999-9999"
                           />
                         </div>
-                        <div>
-                          <label className="text-sm font-medium text-gray-700">
-                            Licencia de conducir
-                          </label>
-                          <Input
-                            type="text"
-                            value={editedLicense}
-                            onChange={(e) => setEditedLicense(e.target.value)}
-                            className="mt-1"
-                            placeholder="Número de licencia"
-                          />
-                        </div>
                       </div>
                     </div>
                   ) : (
@@ -1369,14 +1406,6 @@ export default function DriverDashboard() {
                           <p className="text-sm text-gray-600">Teléfono</p>
                           <p className="font-bold text-dark">
                             {authUser?.phone || "No especificado"}
-                          </p>
-                        </div>
-                        <div className="bg-gray-50 p-4 rounded-lg">
-                          <p className="text-sm text-gray-600">
-                            Licencia de conducir
-                          </p>
-                          <p className="font-bold text-dark">
-                            {authUser?.driverLicense || "No especificada"}
                           </p>
                         </div>
                       </div>

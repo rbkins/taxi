@@ -619,6 +619,10 @@ export function TripProvider({ children }: TripProviderProps) {
       // Usar API real para conectar conductor
       const token = localStorage.getItem("token");
       console.log("🎫 Token exists:", !!token);
+      console.log("🎫 Token length:", token ? token.length : 0);
+      if (token) {
+        console.log("🎫 Token preview:", token.substring(0, 30) + "...");
+      }
 
       if (!token) {
         throw new Error(
@@ -644,6 +648,14 @@ export function TripProvider({ children }: TripProviderProps) {
 
       if (!response.ok) {
         if (response.status === 401) {
+          // Token expirado, limpiar localStorage y notificar al usuario
+          console.log(
+            "🔄 Token expirado en conectar conductor, limpiando sesión..."
+          );
+          localStorage.removeItem("token");
+          localStorage.removeItem("refreshToken");
+          localStorage.removeItem("user");
+
           throw new Error(
             "Sesión expirada. Por favor, inicia sesión nuevamente."
           );
